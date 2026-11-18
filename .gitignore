@@ -1,0 +1,24 @@
+# Byte-compiled / virtual environments / packaging
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.coverage
+
+# OS, editor & environment files
+.DS_Store
+.env
+.env.*
+.vscode/
+.idea/
+
+# Local workspace metadata & generated output artifacts
+.licenses/
+*.sqlite3
+reports/
+preflight_batch_summary.csv
