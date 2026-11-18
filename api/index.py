@@ -1,4 +1,4 @@
-"""Vercel serverless Python entrypoint for serving the interactive web UI (`/`)."""
+"""Vercel serverless Python entrypoint routing `/`, `/api/check`, `/api/snp-check`, and `/api/health`."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ _BaseHandler = make_handler(use_cache=True)
 
 class handler(_BaseHandler):  # noqa: N801
     def do_GET(self) -> None:  # noqa: N802
-        qs = urllib.parse.urlparse(self.path).query
-        self.path = f"/?{qs}" if qs else "/"
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path in ("", "/api", "/api/index", "/api/index.py"):
+            self.path = f"/?{parsed.query}" if parsed.query else "/"
         super().do_GET()
