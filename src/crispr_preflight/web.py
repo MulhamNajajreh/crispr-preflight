@@ -98,12 +98,18 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
   }
   .search-grid {
     display: grid;
-    grid-template-columns: 1.3fr 1fr 1fr auto;
+    grid-template-columns: 1.08fr 1.22fr 0.95fr 1.05fr auto;
     gap: 12px;
     align-items: end;
   }
-  @media (max-width: 820px) {
-    .search-grid { grid-template-columns: 1fr; }
+  .batch-grid {
+    display: grid;
+    grid-template-columns: 1.05fr 1.45fr 0.9fr 1fr auto;
+    gap: 12px;
+    align-items: end;
+  }
+  @media (max-width: 980px) {
+    .search-grid, .batch-grid { grid-template-columns: 1fr; }
   }
   label {
     display: block;
@@ -144,6 +150,11 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 10px center;
+  }
+  select:disabled {
+    background-color: #f1f5f9;
+    color: #94a3b8;
+    cursor: not-allowed;
   }
   .combo-wrap {
     position: relative;
@@ -364,7 +375,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
     <div class="topbar-inner">
       <div>
         <div class="brand">crispr-<span>preflight</span></div>
-        <div class="tagline">Pre-experiment biological flight check before ordering sgRNAs or generating KO cell lines</div>
+        <div class="tagline">Pre-experiment biological flight check across Human, Mouse, Rat, Zebrafish, Drosophila &amp; C. elegans</div>
       </div>
       <div class="mode-tabs" role="tablist">
         <button type="button" id="tab-single" class="mode-tab active" onclick="switchAppMode('SINGLE')">Single-Gene Flight Check</button>
@@ -380,13 +391,24 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
         <form id="query-form" onsubmit="runCheck(event)">
           <div class="search-grid">
             <div>
-              <label for="gene-input">Human Gene Symbol, Alias, or Ensembl ID</label>
+              <label for="species-input">Organism / Genome</label>
+              <select id="species-input" class="nice-select" onchange="onSpeciesChange('single')">
+                <option value="human" selected>Human — H. sapiens (GRCh38)</option>
+                <option value="mouse">Mouse — M. musculus (GRCm39)</option>
+                <option value="rat">Rat — R. norvegicus (GRCr8)</option>
+                <option value="zebrafish">Zebrafish — D. rerio (GRCz11)</option>
+                <option value="fly">Fruit Fly — D. melanogaster (BDGP6.46)</option>
+                <option value="worm">Roundworm — C. elegans (WBcel235)</option>
+              </select>
+            </div>
+            <div>
+              <label for="gene-input" id="gene-input-lbl">Gene Symbol, Alias, or ID</label>
               <input id="gene-input" type="text" placeholder="Type a gene (e.g. STAT3, TP53, BRD4, KRAS...)" value="" autofocus required />
             </div>
             <div>
-              <label for="tissue-input">Target Tissue / Lineage (Optional)</label>
+              <label for="tissue-input" id="tissue-input-lbl">Target Tissue / Lineage (Optional)</label>
               <select id="tissue-input" class="nice-select">
-                <option value="" selected>Any / Pan-Tissue (Peak GTEx)</option>
+                <option value="" id="single-tissue-opt0" selected>Any / Pan-Tissue (Peak GTEx)</option>
                 <optgroup label="Blood &amp; Immune">
                   <option value="blood">Blood / Myeloid / Lymphoid</option>
                 </optgroup>
@@ -409,13 +431,13 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
               </select>
             </div>
             <div>
-              <label for="cell-input">Cell Line (Optional DepMap + CCLE)</label>
+              <label for="cell-input" id="cell-input-lbl">Cell Line / Model (Optional)</label>
               <div class="combo-wrap" id="single-combo-wrap">
-                <input id="cell-input" type="text" autocomplete="off" placeholder="Optional — browse or type cell line..." value=""
+                <input id="cell-input" type="text" autocomplete="off" placeholder="Optional — browse or type model..." value=""
                   onfocus="openCellMenu('single', true)" oninput="onCellInput('single')" onkeydown="onCellKeyDown(event, 'single')" />
                 <div class="combo-actions">
                   <button type="button" id="single-cell-clear" class="combo-icon-btn" style="display:none;" onclick="clearCellInput('single')" title="Clear cell line">&times;</button>
-                  <button type="button" class="combo-icon-btn" onclick="toggleCellMenu(event, 'single')" title="Browse common cell lines">&#9662;</button>
+                  <button type="button" class="combo-icon-btn" onclick="toggleCellMenu(event, 'single')" title="Browse common models">&#9662;</button>
                 </div>
                 <div id="single-cell-menu" class="combo-menu"></div>
               </div>
@@ -426,15 +448,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
           </div>
         </form>
 
-        <div class="chips">
-          <span class="chip-lbl">Try classic wet-lab examples:</span>
-          <button type="button" class="chip" onclick="quickRun('BRD4','lung','A549')">BRD4 (Isoforms + Probes)</button>
-          <button type="button" class="chip" onclick="quickRun('SMARCA4','lung','A549')">SMARCA4 (Already LoF in A549 + SMARCA2 Trap!)</button>
-          <button type="button" class="chip" onclick="quickRun('PLK1','lung','A549')">PLK1 (Pan-Essential &rarr; CRISPRi)</button>
-          <button type="button" class="chip" onclick="quickRun('SOX2','lung','A549')">SOX2 (1-Exon Intronless NMD Escape)</button>
-          <button type="button" class="chip" onclick="quickRun('STAT3','blood','K562')">STAT3 (Blood / K562)</button>
-          <button type="button" class="chip" onclick="quickRun('KRAS','colon','HCT116')">KRAS (Endogenous Driver in HCT116)</button>
-        </div>
+        <div class="chips" id="example-chips-bar"></div>
       </div>
 
       <div id="status-box" class="status-box"></div>
@@ -446,20 +460,31 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
         <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;">
           <div>
             <h2 style="margin:0;font-size:18px;">Batch Hit-List Triage (Paste 5–30 Screen or RNA-seq Candidate Genes)</h2>
-            <div style="font-size:13px;color:var(--muted);">Compares modality risk, DepMap Chronos fitness, CCLE endogenous mutations/amplifications, paralog traps, and top safe exons side-by-side — with full per-gene reports right below.</div>
+            <div style="font-size:13px;color:var(--muted);">Compares modality risk, essentiality, cell-line genetics, paralog traps, and top safe exons side-by-side — with full per-gene reports right below.</div>
           </div>
-          <button type="button" class="btn-secondary" onclick="loadDemoBatch()">Load Demo Screen Hits (6 Genes)</button>
+          <button type="button" class="btn-secondary" id="demo-batch-btn" onclick="loadDemoBatch()">Load Demo Screen Hits</button>
         </div>
 
-        <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr auto;gap:12px;align-items:end;">
+        <div class="batch-grid">
           <div>
-            <label for="batch-genes">Gene Symbols (comma, space, or newline separated — up to 30)</label>
-            <textarea id="batch-genes" rows="3" placeholder="Paste gene list here (e.g. BRD4, SMARCA4, PLK1, SOX2, STAT3, KRAS)..."></textarea>
+            <label for="batch-species">Organism / Genome</label>
+            <select id="batch-species" class="nice-select" onchange="onSpeciesChange('batch')">
+              <option value="human" selected>Human — H. sapiens (GRCh38)</option>
+              <option value="mouse">Mouse — M. musculus (GRCm39)</option>
+              <option value="rat">Rat — R. norvegicus (GRCr8)</option>
+              <option value="zebrafish">Zebrafish — D. rerio (GRCz11)</option>
+              <option value="fly">Fruit Fly — D. melanogaster (BDGP6.46)</option>
+              <option value="worm">Roundworm — C. elegans (WBcel235)</option>
+            </select>
           </div>
           <div>
-            <label for="batch-tissue">Target Tissue / Lineage (Optional)</label>
+            <label for="batch-genes">Gene Symbols (comma, space, or newline separated — up to 30)</label>
+            <textarea id="batch-genes" rows="2" placeholder="Paste gene list here (e.g. BRD4, SMARCA4, PLK1, SOX2, STAT3, KRAS)..."></textarea>
+          </div>
+          <div>
+            <label for="batch-tissue">Target Tissue (Optional)</label>
             <select id="batch-tissue" class="nice-select">
-              <option value="" selected>Any / Pan-Tissue (Peak GTEx)</option>
+              <option value="" id="batch-tissue-opt0" selected>Any / Pan-Tissue (Peak GTEx)</option>
               <optgroup label="Blood &amp; Immune">
                 <option value="blood">Blood / Myeloid / Lymphoid</option>
               </optgroup>
@@ -482,13 +507,13 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
             </select>
           </div>
           <div>
-            <label for="batch-cell">Cell Line (Optional DepMap + CCLE)</label>
+            <label for="batch-cell">Cell Line / Model (Optional)</label>
             <div class="combo-wrap" id="batch-combo-wrap">
-              <input id="batch-cell" type="text" autocomplete="off" value="" placeholder="Optional — browse or type cell line..."
+              <input id="batch-cell" type="text" autocomplete="off" value="" placeholder="Optional — browse or type model..."
                 onfocus="openCellMenu('batch', true)" oninput="onCellInput('batch')" onkeydown="onCellKeyDown(event, 'batch')" />
               <div class="combo-actions">
                 <button type="button" id="batch-cell-clear" class="combo-icon-btn" style="display:none;" onclick="clearCellInput('batch')" title="Clear cell line">&times;</button>
-                <button type="button" class="combo-icon-btn" onclick="toggleCellMenu(event, 'batch')" title="Browse common cell lines">&#9662;</button>
+                <button type="button" class="combo-icon-btn" onclick="toggleCellMenu(event, 'batch')" title="Browse common models">&#9662;</button>
               </div>
               <div id="batch-cell-menu" class="combo-menu"></div>
             </div>
@@ -556,13 +581,13 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
       <!-- KPIs -->
       <div class="kpi-grid">
         <div class="kpi">
-          <div class="lbl">DepMap Fitness &amp; CCLE Genetics</div>
+          <div class="lbl" id="lbl-kpi-1">DepMap Fitness &amp; CCLE Genetics</div>
           <div class="val" id="k-chronos"></div>
           <div class="sub" id="k-chronos-sub"></div>
           <div id="k-ccle-sub"></div>
         </div>
-        <div class="kpi"><div class="lbl">Human LoF Constraint (gnomAD)</div><div class="val" id="k-loeuf"></div><div class="sub" id="k-pli-sub"></div></div>
-        <div class="kpi"><div class="lbl">GTEx Baseline Expression</div><div class="val" id="k-tpm"></div><div class="sub" id="k-loc"></div></div>
+        <div class="kpi"><div class="lbl" id="lbl-kpi-2">Human LoF Constraint (gnomAD)</div><div class="val" id="k-loeuf"></div><div class="sub" id="k-pli-sub"></div></div>
+        <div class="kpi"><div class="lbl" id="lbl-kpi-3">GTEx Baseline Expression</div><div class="val" id="k-tpm"></div><div class="sub" id="k-loc"></div></div>
         <div class="kpi"><div class="lbl">Audited Coding Isoforms</div><div class="val" id="k-iso"></div><div class="sub" id="k-exons"></div></div>
       </div>
 
@@ -600,7 +625,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
           <table>
             <thead>
               <tr>
-                <th>Exon</th><th>Score</th><th>Tier</th><th>AA Span</th><th>Length</th><th>Isoforms</th><th>NGG Sites</th><th>NMD Status</th><th>CRISPick Coordinate (GRCh38)</th>
+                <th>Exon</th><th>Score</th><th>Tier</th><th>AA Span</th><th>Length</th><th>Isoforms</th><th>NGG Sites</th><th>NMD Status</th><th id="exon-coord-th">Target Region (GRCh38)</th>
               </tr>
             </thead>
             <tbody id="exon-tbody"></tbody>
@@ -612,8 +637,8 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
       <div class="card">
         <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;">
           <div>
-            <h2 style="margin:0;">4. SpCas9 sgRNA Spacers, Common SNP Shield &amp; TIDE/ICE Genotyping Primers</h2>
-            <div style="font-size:12px;color:var(--muted);">Includes U6 Golden Gate oligos (<code>BsmBI</code>/<code>BbsI</code>), paired 430–740 bp TIDE/ICE PCR primers, and background gnomAD common SNP screening (MAF &ge;1%).</div>
+            <h2 style="margin:0;">4. SpCas9 sgRNA Spacers, Strain/SNP Shield &amp; TIDE/ICE Genotyping Primers</h2>
+            <div style="font-size:12px;color:var(--muted);" id="guides-sub">Includes U6 Golden Gate oligos (<code>BsmBI</code>/<code>BbsI</code>), paired 430–740 bp TIDE/ICE PCR primers, and background gnomAD common SNP screening (MAF &ge;1%).</div>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
             <div class="seg-bar">
@@ -625,7 +650,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
           </div>
         </div>
         <div class="offtarget-note">
-          <div style="max-width:740px;">
+          <div style="max-width:740px;" id="offtarget-assembly-note">
             <strong>Before ordering oligos — 10-second genome-wide off-target check:</strong> Local rules rank on-target quality &amp; biological safety; paste your chosen 2–3 spacers into <strong>Cas-OFFinder</strong> or <strong>Broad CRISPick</strong> to verify zero 0–2 mismatch off-target sites across GRCh38.
           </div>
           <div style="display:flex;gap:8px;white-space:nowrap;">
@@ -640,7 +665,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
       <div class="two-col">
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px;">
-            <h2 style="margin:0;">5. Human Paralog Buffering Check</h2>
+            <h2 style="margin:0;" id="paralog-hdr">5. Paralog Buffering Check</h2>
             <span style="font-size:11.5px;color:var(--muted);">Click a paralog to pin partner guides for Dual-KO</span>
           </div>
           <div id="paralogs-wrap"></div>
@@ -672,50 +697,241 @@ let ORDER_BASKET = []; // pinned guides across genes (e.g. target + paralog)
 let BATCH_ROWS = []; // [{ gene, payload, error }]
 let SELECTED_BATCH_IDX = -1;
 
-const CELL_LINE_CATALOG = [
-  { group: 'Common Lab Workhorses', name: 'HEK293T', sub: 'Embryonic Kidney' },
-  { group: 'Common Lab Workhorses', name: 'HeLa', sub: 'Cervical Carcinoma' },
-  { group: 'Common Lab Workhorses', name: 'U2OS', sub: 'Osteosarcoma' },
-  { group: 'Common Lab Workhorses', name: 'RPE1', sub: 'Retinal Epithelial (Diploid)' },
-  { group: 'Common Lab Workhorses', name: 'IMR-90', sub: 'Lung Fibroblast' },
-  { group: 'Blood / Leukemia / Lymphoma', name: 'K562', sub: 'CML Myeloid' },
-  { group: 'Blood / Leukemia / Lymphoma', name: 'Jurkat', sub: 'T-Cell Leukemia (T-ALL)' },
-  { group: 'Blood / Leukemia / Lymphoma', name: 'THP-1', sub: 'AML Monocytic' },
-  { group: 'Blood / Leukemia / Lymphoma', name: 'MOLM-13', sub: 'AML (FLT3-ITD)' },
-  { group: 'Blood / Leukemia / Lymphoma', name: 'MV4-11', sub: 'AML Macrophage' },
-  { group: 'Blood / Leukemia / Lymphoma', name: 'NALM-6', sub: 'B-Cell Precursor ALL' },
-  { group: 'Blood / Leukemia / Lymphoma', name: 'Raji', sub: 'Burkitt B-Cell Lymphoma' },
-  { group: 'Blood / Leukemia / Lymphoma', name: 'HL-60', sub: 'Promyelocytic Leukemia' },
-  { group: 'Lung', name: 'A549', sub: 'NSCLC Adenocarcinoma' },
-  { group: 'Lung', name: 'NCI-H1299', sub: 'NSCLC (p53-null)' },
-  { group: 'Lung', name: 'NCI-H1975', sub: 'NSCLC (EGFR L858R/T790M)' },
-  { group: 'Lung', name: 'PC-9', sub: 'NSCLC (EGFR exon19del)' },
-  { group: 'Lung', name: 'HCC827', sub: 'NSCLC Adenocarcinoma' },
-  { group: 'Lung', name: 'Calu-3', sub: 'Lung Airway Epithelial' },
-  { group: 'Colon & GI', name: 'HCT116', sub: 'Colorectal (MSI-H, KRAS G13D)' },
-  { group: 'Colon & GI', name: 'HT-29', sub: 'Colorectal (BRAF V600E)' },
-  { group: 'Colon & GI', name: 'SW480', sub: 'Colorectal Adenocarcinoma' },
-  { group: 'Colon & GI', name: 'DLD-1', sub: 'Colorectal Adenocarcinoma' },
-  { group: 'Colon & GI', name: 'Caco-2', sub: 'Intestinal Epithelial Barrier' },
-  { group: 'Colon & GI', name: 'LoVo', sub: 'Colorectal Adenocarcinoma' },
-  { group: 'Breast', name: 'MCF7', sub: 'Luminal ER+ Breast' },
-  { group: 'Breast', name: 'MDA-MB-231', sub: 'Triple-Negative Breast (TNBC)' },
-  { group: 'Breast', name: 'SK-BR-3', sub: 'HER2-Amplified Breast' },
-  { group: 'Breast', name: 'T-47D', sub: 'Luminal ER+ Breast' },
-  { group: 'Breast', name: 'BT-474', sub: 'Luminal HER2+ Breast' },
-  { group: 'Liver & Pancreas', name: 'HepG2', sub: 'Hepatoblastoma / Liver' },
-  { group: 'Liver & Pancreas', name: 'Huh-7', sub: 'Hepatocellular Carcinoma' },
-  { group: 'Liver & Pancreas', name: 'PANC-1', sub: 'Pancreatic Ductal (PDAC)' },
-  { group: 'Liver & Pancreas', name: 'MIA PaCa-2', sub: 'Pancreatic Ductal (PDAC)' },
-  { group: 'Liver & Pancreas', name: 'AsPC-1', sub: 'Pancreatic Adenocarcinoma' },
-  { group: 'Brain, Skin, Prostate & Ovary', name: 'U-87 MG', sub: 'Glioblastoma' },
-  { group: 'Brain, Skin, Prostate & Ovary', name: 'SH-SY5Y', sub: 'Neuroblastoma' },
-  { group: 'Brain, Skin, Prostate & Ovary', name: 'A375', sub: 'Melanoma (BRAF V600E)' },
-  { group: 'Brain, Skin, Prostate & Ovary', name: 'PC-3', sub: 'Prostate Carcinoma' },
-  { group: 'Brain, Skin, Prostate & Ovary', name: 'LNCaP', sub: 'Androgen-Sensitive Prostate' },
-  { group: 'Brain, Skin, Prostate & Ovary', name: 'OVCAR-8', sub: 'High-Grade Serous Ovarian' },
-  { group: 'Brain, Skin, Prostate & Ovary', name: '786-O', sub: 'Clear-Cell Renal (VHL-null)' }
-];
+const SPECIES_META = {
+  human: {
+    label: 'Human (GRCh38)',
+    assembly: 'GRCh38',
+    placeholder: 'Type a gene (e.g. STAT3, TP53, BRD4, KRAS...)',
+    batchPlaceholder: 'Paste gene list here (e.g. BRD4, SMARCA4, PLK1, SOX2, STAT3, KRAS)...',
+    demoBatch: 'BRD4, SMARCA4, PLK1, SOX2, STAT3, KRAS',
+    cellSub: 'Pan-cancer median',
+    customHint: 'Custom DepMap / CCLE Cell Line (1,739 supported)'
+  },
+  mouse: {
+    label: 'Mouse (GRCm39)',
+    assembly: 'GRCm39',
+    placeholder: 'Type a mouse gene (e.g. Trp53, Smarca4, Plk1, Sox2...)',
+    batchPlaceholder: 'Paste mouse genes (e.g. Trp53, Smarca4, Plk1, Sox2, Brd4, Stat3)...',
+    demoBatch: 'Trp53, Smarca4, Plk1, Sox2, Brd4, Stat3',
+    cellSub: 'General mouse model',
+    customHint: 'Custom Mouse Cell Line / Strain'
+  },
+  rat: {
+    label: 'Rat (GRCr8)',
+    assembly: 'GRCr8',
+    placeholder: 'Type a rat gene (e.g. Tp53, Smarca4, Stat3, Kras...)',
+    batchPlaceholder: 'Paste rat genes (e.g. Tp53, Smarca4, Stat3, Kras)...',
+    demoBatch: 'Tp53, Smarca4, Stat3, Kras',
+    cellSub: 'General rat model',
+    customHint: 'Custom Rat Cell Line / Strain'
+  },
+  zebrafish: {
+    label: 'Zebrafish (GRCz11)',
+    assembly: 'GRCz11',
+    placeholder: 'Type a zebrafish gene (e.g. tp53, smarca4a, sox2, stat3...)',
+    batchPlaceholder: 'Paste zebrafish genes (e.g. tp53, smarca4a, sox2, stat3)...',
+    demoBatch: 'tp53, smarca4a, sox2, stat3',
+    cellSub: 'F0 embryo / general model',
+    customHint: 'Custom Zebrafish Line / Stage'
+  },
+  fly: {
+    label: 'Drosophila (BDGP6.46)',
+    assembly: 'BDGP6.46',
+    placeholder: 'Type a fly gene (e.g. Stat92E, brm, Ras85D, N...)',
+    batchPlaceholder: 'Paste fly genes (e.g. Stat92E, brm, Ras85D)...',
+    demoBatch: 'Stat92E, brm, Ras85D',
+    cellSub: 'S2R+ / germline stock',
+    customHint: 'Custom Drosophila Cell Line / Stock'
+  },
+  worm: {
+    label: 'C. elegans (WBcel235)',
+    assembly: 'WBcel235',
+    placeholder: 'Type a C. elegans gene (e.g. cep-1, swsn-4, let-60...)',
+    batchPlaceholder: 'Paste C. elegans genes (e.g. cep-1, swsn-4, let-60)...',
+    demoBatch: 'cep-1, swsn-4, let-60',
+    cellSub: 'N2 Bristol / RNP injection',
+    customHint: 'Custom C. elegans Strain'
+  }
+};
+
+const EXAMPLES_BY_SPECIES = {
+  human: [
+    { gene: 'BRD4', tissue: 'lung', cell: 'A549', label: 'BRD4 (Isoforms + Probes)' },
+    { gene: 'SMARCA4', tissue: 'lung', cell: 'A549', label: 'SMARCA4 (Already LoF in A549 + SMARCA2 Trap!)' },
+    { gene: 'PLK1', tissue: 'lung', cell: 'A549', label: 'PLK1 (Pan-Essential \u2192 CRISPRi)' },
+    { gene: 'SOX2', tissue: 'lung', cell: 'A549', label: 'SOX2 (1-Exon Intronless NMD Escape)' },
+    { gene: 'STAT3', tissue: 'blood', cell: 'K562', label: 'STAT3 (Blood / K562)' },
+    { gene: 'KRAS', tissue: 'colon', cell: 'HCT116', label: 'KRAS (Endogenous Driver in HCT116)' }
+  ],
+  mouse: [
+    { gene: 'Trp53', tissue: '', cell: 'NIH/3T3', label: 'Trp53 (Mouse p53 \u2022 GRCm39)' },
+    { gene: 'Smarca4', tissue: '', cell: 'B16-F10', label: 'Smarca4 (Smarca2 Paralog Trap!)' },
+    { gene: 'Plk1', tissue: '', cell: 'mESC (E14)', label: 'Plk1 (Essential \u2192 CRISPRi)' },
+    { gene: 'Sox2', tissue: '', cell: 'mESC (E14)', label: 'Sox2 (1-Exon Intronless)' },
+    { gene: 'Brd4', tissue: '', cell: 'RAW 264.7', label: 'Brd4 (Isoforms + BET Probes)' },
+    { gene: 'Stat3', tissue: '', cell: 'RAW 264.7', label: 'Stat3 (RAW 264.7 Myeloid)' }
+  ],
+  rat: [
+    { gene: 'Tp53', tissue: '', cell: 'PC-12', label: 'Tp53 (Rat p53 \u2022 GRCr8)' },
+    { gene: 'Smarca4', tissue: '', cell: 'H9c2', label: 'Smarca4 (Smarca2 Paralog Trap)' },
+    { gene: 'Stat3', tissue: '', cell: 'NRK', label: 'Stat3 (Rat STAT3)' },
+    { gene: 'Kras', tissue: '', cell: 'PC-12', label: 'Kras (Rat KRAS)' }
+  ],
+  zebrafish: [
+    { gene: 'tp53', tissue: '', cell: 'AB / Tubingen Embryo (F0)', label: 'tp53 (Zebrafish GRCz11)' },
+    { gene: 'smarca4a', tissue: '', cell: 'AB / Tubingen Embryo (F0)', label: 'smarca4a (Teleost Paralog Trap!)' },
+    { gene: 'sox2', tissue: '', cell: 'AB / Tubingen Embryo (F0)', label: 'sox2 (1-Exon Intronless)' },
+    { gene: 'stat3', tissue: '', cell: 'AB / Tubingen Embryo (F0)', label: 'stat3 (Zebrafish stat3)' }
+  ],
+  fly: [
+    { gene: 'Stat92E', tissue: '', cell: 'S2R+', label: 'Stat92E (JAK/STAT \u2022 BDGP6.46)' },
+    { gene: 'brm', tissue: '', cell: 'S2R+', label: 'brm (Brahma SWI/SNF)' },
+    { gene: 'Ras85D', tissue: '', cell: 'Kc167', label: 'Ras85D (Essential \u2192 CRISPRi/RNAi)' }
+  ],
+  worm: [
+    { gene: 'cep-1', tissue: '', cell: 'N2 Bristol Gonad (RNP)', label: 'cep-1 (Worm p53 \u2022 WBcel235)' },
+    { gene: 'swsn-4', tissue: '', cell: 'N2 Bristol Gonad (RNP)', label: 'swsn-4 (SWI/SNF ATPase)' },
+    { gene: 'let-60', tissue: '', cell: 'N2 Bristol Gonad (RNP)', label: 'let-60 (Ras Ortholog)' }
+  ]
+};
+
+const CELL_CATALOG_BY_SPECIES = {
+  human: [
+    { group: 'Common Lab Workhorses', name: 'HEK293T', sub: 'Embryonic Kidney' },
+    { group: 'Common Lab Workhorses', name: 'HeLa', sub: 'Cervical Carcinoma' },
+    { group: 'Common Lab Workhorses', name: 'U2OS', sub: 'Osteosarcoma' },
+    { group: 'Common Lab Workhorses', name: 'RPE1', sub: 'Retinal Epithelial (Diploid)' },
+    { group: 'Common Lab Workhorses', name: 'IMR-90', sub: 'Lung Fibroblast' },
+    { group: 'Blood / Leukemia / Lymphoma', name: 'K562', sub: 'CML Myeloid' },
+    { group: 'Blood / Leukemia / Lymphoma', name: 'Jurkat', sub: 'T-Cell Leukemia (T-ALL)' },
+    { group: 'Blood / Leukemia / Lymphoma', name: 'THP-1', sub: 'AML Monocytic' },
+    { group: 'Blood / Leukemia / Lymphoma', name: 'MOLM-13', sub: 'AML (FLT3-ITD)' },
+    { group: 'Blood / Leukemia / Lymphoma', name: 'MV4-11', sub: 'AML Macrophage' },
+    { group: 'Blood / Leukemia / Lymphoma', name: 'NALM-6', sub: 'B-Cell Precursor ALL' },
+    { group: 'Blood / Leukemia / Lymphoma', name: 'Raji', sub: 'Burkitt B-Cell Lymphoma' },
+    { group: 'Blood / Leukemia / Lymphoma', name: 'HL-60', sub: 'Promyelocytic Leukemia' },
+    { group: 'Lung', name: 'A549', sub: 'NSCLC Adenocarcinoma' },
+    { group: 'Lung', name: 'NCI-H1299', sub: 'NSCLC (p53-null)' },
+    { group: 'Lung', name: 'NCI-H1975', sub: 'NSCLC (EGFR L858R/T790M)' },
+    { group: 'Lung', name: 'PC-9', sub: 'NSCLC (EGFR exon19del)' },
+    { group: 'Lung', name: 'HCC827', sub: 'NSCLC Adenocarcinoma' },
+    { group: 'Lung', name: 'Calu-3', sub: 'Lung Airway Epithelial' },
+    { group: 'Colon & GI', name: 'HCT116', sub: 'Colorectal (MSI-H, KRAS G13D)' },
+    { group: 'Colon & GI', name: 'HT-29', sub: 'Colorectal (BRAF V600E)' },
+    { group: 'Colon & GI', name: 'SW480', sub: 'Colorectal Adenocarcinoma' },
+    { group: 'Colon & GI', name: 'DLD-1', sub: 'Colorectal Adenocarcinoma' },
+    { group: 'Colon & GI', name: 'Caco-2', sub: 'Intestinal Epithelial Barrier' },
+    { group: 'Colon & GI', name: 'LoVo', sub: 'Colorectal Adenocarcinoma' },
+    { group: 'Breast', name: 'MCF7', sub: 'Luminal ER+ Breast' },
+    { group: 'Breast', name: 'MDA-MB-231', sub: 'Triple-Negative Breast (TNBC)' },
+    { group: 'Breast', name: 'SK-BR-3', sub: 'HER2-Amplified Breast' },
+    { group: 'Breast', name: 'T-47D', sub: 'Luminal ER+ Breast' },
+    { group: 'Breast', name: 'BT-474', sub: 'Luminal HER2+ Breast' },
+    { group: 'Liver & Pancreas', name: 'HepG2', sub: 'Hepatoblastoma / Liver' },
+    { group: 'Liver & Pancreas', name: 'Huh-7', sub: 'Hepatocellular Carcinoma' },
+    { group: 'Liver & Pancreas', name: 'PANC-1', sub: 'Pancreatic Ductal (PDAC)' },
+    { group: 'Liver & Pancreas', name: 'MIA PaCa-2', sub: 'Pancreatic Ductal (PDAC)' },
+    { group: 'Liver & Pancreas', name: 'AsPC-1', sub: 'Pancreatic Adenocarcinoma' },
+    { group: 'Brain, Skin, Prostate & Ovary', name: 'U-87 MG', sub: 'Glioblastoma' },
+    { group: 'Brain, Skin, Prostate & Ovary', name: 'SH-SY5Y', sub: 'Neuroblastoma' },
+    { group: 'Brain, Skin, Prostate & Ovary', name: 'A375', sub: 'Melanoma (BRAF V600E)' },
+    { group: 'Brain, Skin, Prostate & Ovary', name: 'PC-3', sub: 'Prostate Carcinoma' },
+    { group: 'Brain, Skin, Prostate & Ovary', name: 'LNCaP', sub: 'Androgen-Sensitive Prostate' },
+    { group: 'Brain, Skin, Prostate & Ovary', name: 'OVCAR-8', sub: 'High-Grade Serous Ovarian' },
+    { group: 'Brain, Skin, Prostate & Ovary', name: '786-O', sub: 'Clear-Cell Renal (VHL-null)' }
+  ],
+  mouse: [
+    { group: 'Fibroblast & Stem Cell Workhorses', name: 'NIH/3T3', sub: 'Embryonic Fibroblast' },
+    { group: 'Fibroblast & Stem Cell Workhorses', name: 'MEF', sub: 'Mouse Embryonic Fibroblast' },
+    { group: 'Fibroblast & Stem Cell Workhorses', name: 'mESC (E14)', sub: 'Pluripotent Embryonic Stem Cell' },
+    { group: 'Immune & Hematopoietic', name: 'RAW 264.7', sub: 'Macrophage / Myeloid' },
+    { group: 'Immune & Hematopoietic', name: 'BV-2', sub: 'Microglia' },
+    { group: 'Immune & Hematopoietic', name: 'EL4', sub: 'T-Cell Lymphoma' },
+    { group: 'Immune & Hematopoietic', name: 'Ba/F3', sub: 'IL-3 Dependent Pro-B' },
+    { group: 'Syngeneic Oncology Models', name: 'B16-F10', sub: 'Melanoma (C57BL/6)' },
+    { group: 'Syngeneic Oncology Models', name: 'MC38', sub: 'Colon Adenocarcinoma (C57BL/6)' },
+    { group: 'Syngeneic Oncology Models', name: 'CT26', sub: 'Colon Carcinoma (BALB/c)' },
+    { group: 'Syngeneic Oncology Models', name: '4T1', sub: 'Mammary Carcinoma (BALB/c)' },
+    { group: 'Muscle & Neural', name: 'C2C12', sub: 'Myoblast' },
+    { group: 'Muscle & Neural', name: 'Neuro-2a', sub: 'Neuroblastoma' }
+  ],
+  rat: [
+    { group: 'Rat Cell Models', name: 'PC-12', sub: 'Adrenal Pheochromocytoma / Neuronal' },
+    { group: 'Rat Cell Models', name: 'H9c2', sub: 'Embryonic Cardiomyoblast' },
+    { group: 'Rat Cell Models', name: 'NRK', sub: 'Normal Rat Kidney Epithelial/Fibroblast' },
+    { group: 'Rat Cell Models', name: 'INS-1', sub: 'Pancreatic Beta-Cell' },
+    { group: 'Rat Cell Models', name: 'C6', sub: 'Glioma' }
+  ],
+  zebrafish: [
+    { group: 'Zebrafish In Vivo & Cell Lines', name: 'AB / Tubingen Embryo (F0)', sub: '1-Cell Zygote Cas9 RNP Injection' },
+    { group: 'Zebrafish In Vivo & Cell Lines', name: 'TL Embryo', sub: '1-Cell Zygote Injection' },
+    { group: 'Zebrafish In Vivo & Cell Lines', name: 'ZF4', sub: 'Embryonic Fibroblast Line' },
+    { group: 'Zebrafish In Vivo & Cell Lines', name: 'PAC2', sub: 'Embryonic Fibroblast Line' }
+  ],
+  fly: [
+    { group: 'Drosophila Tissue Culture & Germline', name: 'S2R+', sub: 'Adherent Schneider Embryonic' },
+    { group: 'Drosophila Tissue Culture & Germline', name: 'Kc167', sub: 'Embryonic Hemocyte-like' },
+    { group: 'Drosophila Tissue Culture & Germline', name: 'nos-Cas9 Germline', sub: 'Transgenic Germline Injection' }
+  ],
+  worm: [
+    { group: 'C. elegans In Vivo Models', name: 'N2 Bristol Gonad (RNP)', sub: 'Syncytial Gonad Cas9 RNP + dpy-10' }
+  ]
+};
+
+function getScopeSpecies(scope) {
+  const el = document.getElementById(scope === 'batch' ? 'batch-species' : 'species-input');
+  const val = (el && el.value ? el.value.trim().toLowerCase() : 'human');
+  return SPECIES_META[val] ? val : 'human';
+}
+
+function getCatalogForScope(scope) {
+  return CELL_CATALOG_BY_SPECIES[getScopeSpecies(scope)] || CELL_CATALOG_BY_SPECIES.human;
+}
+
+function renderExampleChips() {
+  const sp = getScopeSpecies('single');
+  const list = EXAMPLES_BY_SPECIES[sp] || EXAMPLES_BY_SPECIES.human;
+  const bar = document.getElementById('example-chips-bar');
+  if (!bar) return;
+  bar.innerHTML = `<span class="chip-lbl">Try classic ${esc(SPECIES_META[sp].label.split(' ')[0])} examples:</span>` +
+    list.map((ex, i) => `<button type="button" class="chip" onclick="runExampleChip(${i})">${esc(ex.label)}</button>`).join('');
+}
+
+function runExampleChip(idx) {
+  const sp = getScopeSpecies('single');
+  const list = EXAMPLES_BY_SPECIES[sp] || EXAMPLES_BY_SPECIES.human;
+  const item = list[idx];
+  if (!item) return;
+  quickRun(item.gene, item.tissue, item.cell, sp);
+}
+
+function onSpeciesChange(scope, clearInputs = true) {
+  const sp = getScopeSpecies(scope);
+  const meta = SPECIES_META[sp];
+  const isHuman = sp === 'human';
+  if (scope === 'batch') {
+    const tSel = document.getElementById('batch-tissue');
+    const opt0 = document.getElementById('batch-tissue-opt0');
+    tSel.disabled = !isHuman;
+    if (!isHuman) tSel.value = '';
+    if (opt0) opt0.textContent = isHuman ? 'Any / Pan-Tissue (Peak GTEx)' : 'N/A (Human GTEx only)';
+    document.getElementById('batch-genes').placeholder = meta.batchPlaceholder;
+    if (clearInputs) setCellValue('batch', '');
+  } else {
+    const tSel = document.getElementById('tissue-input');
+    const opt0 = document.getElementById('single-tissue-opt0');
+    tSel.disabled = !isHuman;
+    if (!isHuman) tSel.value = '';
+    if (opt0) opt0.textContent = isHuman ? 'Any / Pan-Tissue (Peak GTEx)' : 'N/A (Human GTEx only)';
+    document.getElementById('gene-input').placeholder = meta.placeholder;
+    if (clearInputs) {
+      document.getElementById('gene-input').value = '';
+      setCellValue('single', '');
+    }
+    renderExampleChips();
+  }
+  closeAllCellMenus();
+}
 
 function getCellEls(scope) {
   return scope === 'batch'
@@ -772,7 +988,8 @@ function onCellKeyDown(ev, scope) {
 }
 
 function pickCellByIndex(scope, idx) {
-  const chosen = idx < 0 ? '' : CELL_LINE_CATALOG[idx].name;
+  const catalog = getCatalogForScope(scope);
+  const chosen = idx < 0 ? '' : (catalog[idx] ? catalog[idx].name : '');
   setCellValue(scope, chosen);
   getCellEls(scope).menu.classList.remove('open');
 }
@@ -785,18 +1002,21 @@ function openCellMenu(scope, showAll) {
   const other = scope === 'batch' ? 'single' : 'batch';
   getCellEls(other).menu.classList.remove('open');
 
+  const sp = getScopeSpecies(scope);
+  const meta = SPECIES_META[sp];
+  const catalog = getCatalogForScope(scope);
   const { input, menu } = getCellEls(scope);
   const q = showAll ? '' : input.value.trim().toLowerCase();
   const curUpper = input.value.trim().toUpperCase();
 
   let html = `<button type="button" class="combo-opt ${!curUpper ? 'selected' : ''}" onmousedown="event.preventDefault(); pickCellByIndex('${scope}', -1)">
-    <span><strong>Any / No Specific Cell Line</strong></span>
-    <span class="combo-opt-sub">Pan-cancer median</span>
+    <span><strong>Any / No Specific Model</strong></span>
+    <span class="combo-opt-sub">${esc(meta.cellSub)}</span>
   </button>`;
 
   let lastGrp = '';
   let matchCount = 0;
-  CELL_LINE_CATALOG.forEach((item, idx) => {
+  catalog.forEach((item, idx) => {
     if (q) {
       const hay = `${item.name} ${item.sub} ${item.group}`.toLowerCase();
       const compactHay = hay.replace(/[^a-z0-9]/g, '');
@@ -818,7 +1038,7 @@ function openCellMenu(scope, showAll) {
   });
 
   if (q && matchCount === 0) {
-    html += `<div class="combo-grp">Custom DepMap / CCLE Cell Line (1,739 supported)</div>
+    html += `<div class="combo-grp">${esc(meta.customHint)}</div>
       <button type="button" class="combo-opt selected" onmousedown="event.preventDefault(); acceptTypedCell('${scope}')">
         <span>Use <strong>"${esc(input.value.trim())}"</strong></span>
         <span class="combo-opt-sub">Press Enter to run</span>
@@ -914,9 +1134,10 @@ function fallbackCopyText(txt, btn, msg) {
   flashCopied(btn, msg);
 }
 
-function syncUrlPermalink(gene, tissue, cell) {
+function syncUrlPermalink(gene, tissue, cell, species) {
   try {
     const params = new URLSearchParams();
+    if (species && species !== 'human') params.set('species', species);
     if (gene) params.set('gene', gene);
     if (tissue) params.set('tissue', tissue);
     if (cell) params.set('cell_line', cell);
@@ -1037,6 +1258,7 @@ async function inspectParalogByIndex(idx) {
   if (!CURRENT) return;
   const p = (CURRENT.report.paralogs || [])[idx];
   if (!p) return;
+  const curSpecies = CURRENT.report.species_id || 'human';
   if (APP_MODE === 'BATCH') {
     const existingIdx = BATCH_ROWS.findIndex(r => r.gene.toUpperCase() === p.gene_symbol.toUpperCase());
     if (existingIdx >= 0 && BATCH_ROWS[existingIdx].payload) {
@@ -1046,10 +1268,10 @@ async function inspectParalogByIndex(idx) {
     const tissue = document.getElementById('batch-tissue').value.trim();
     const cell = document.getElementById('batch-cell').value.trim();
     const newIdx = BATCH_ROWS.length;
-    BATCH_ROWS.push({ gene: p.gene_symbol.toUpperCase(), payload: null, error: null, pending: true });
+    BATCH_ROWS.push({ gene: p.gene_symbol, payload: null, error: null, pending: true });
     renderBatchTable();
     try {
-      const params = new URLSearchParams({ _route: 'check', gene: p.gene_symbol });
+      const params = new URLSearchParams({ _route: 'check', species: curSpecies, gene: p.gene_symbol });
       if (tissue) params.set('tissue', tissue);
       if (cell) params.set('cell_line', cell);
       const resp = await fetch(`/api/check?${params.toString()}`, { cache: 'no-store' });
@@ -1072,30 +1294,37 @@ async function inspectParalogByIndex(idx) {
   }
   const tissue = document.getElementById('tissue-input').value.trim();
   const cell = document.getElementById('cell-input').value.trim();
-  quickRun(p.gene_symbol, tissue, cell);
+  quickRun(p.gene_symbol, tissue, cell, curSpecies);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function quickRun(gene, tissue, cell) {
+function quickRun(gene, tissue, cell, species) {
   switchAppMode('SINGLE');
+  if (species && SPECIES_META[species]) {
+    document.getElementById('species-input').value = species;
+    onSpeciesChange('single', false);
+  }
+  const sp = getScopeSpecies('single');
   document.getElementById('gene-input').value = gene;
-  document.getElementById('tissue-input').value = tissue || '';
+  document.getElementById('tissue-input').value = sp === 'human' ? (tissue || '') : '';
   setCellValue('single', cell || '');
   closeAllCellMenus();
-  syncUrlPermalink(gene, tissue || '', cell || '');
+  syncUrlPermalink(gene, sp === 'human' ? (tissue || '') : '', cell || '', sp);
   runCheck(null, false);
 }
 
 async function runCheck(ev, updateUrl = true) {
   if (ev) ev.preventDefault();
   closeAllCellMenus();
+  const sp = getScopeSpecies('single');
+  const meta = SPECIES_META[sp];
   const gene = document.getElementById('gene-input').value.trim();
-  const tissue = document.getElementById('tissue-input').value.trim();
+  const tissue = sp === 'human' ? document.getElementById('tissue-input').value.trim() : '';
   const cell = document.getElementById('cell-input').value.trim();
   if (!gene) return;
 
   if (updateUrl) {
-    syncUrlPermalink(gene, tissue, cell);
+    syncUrlPermalink(gene, tissue, cell, sp);
   }
   const reqId = ++ACTIVE_REQ_ID;
   const btn = document.getElementById('run-btn');
@@ -1107,13 +1336,16 @@ async function runCheck(ev, updateUrl = true) {
   const tStart = performance.now();
   const renderLoadingMsg = () => {
     const secs = ((performance.now() - tStart) / 1000).toFixed(1);
-    sbox.innerHTML = `<strong>Running biological flight check on ${esc(gene.toUpperCase())} (${secs}s)...</strong> Querying GRCh38 isoforms, Pfam domains, DepMap, CCLE, gnomAD, GTEx &amp; HPA in parallel.`;
+    const dbDetail = sp === 'human'
+      ? 'Querying GRCh38 isoforms, Pfam domains, DepMap, CCLE, gnomAD, GTEx &amp; HPA in parallel.'
+      : `Querying ${esc(meta.assembly)} RefSeq/Ensembl exons, Pfam domains, Alliance DIOPT paralogs &amp; conserved human ortholog metrics in parallel.`;
+    sbox.innerHTML = `<strong>Running ${esc(meta.label)} flight check on ${esc(gene)} (${secs}s)...</strong> ${dbDetail}`;
   };
   renderLoadingMsg();
   const timerHandle = setInterval(renderLoadingMsg, 150);
 
   try {
-    const params = new URLSearchParams({ _route: 'check', gene });
+    const params = new URLSearchParams({ _route: 'check', species: sp, gene });
     if (tissue) params.set('tissue', tissue);
     if (cell) params.set('cell_line', cell);
     const resp = await fetch(`/api/check?${params.toString()}`, { cache: 'no-store' });
@@ -1161,6 +1393,7 @@ async function triggerAsyncSnpCheck() {
   if (!CURRENT) return;
   const snpReq = ++ACTIVE_SNP_REQ;
   const r = CURRENT.report;
+  if ((r.species_id || 'human') !== 'human') return;
   const allGuides = [];
   (r.recommended_guides || []).forEach(g => allGuides.push(g));
   (r.crispri_guides || []).forEach(g => allGuides.push(g));
@@ -1401,6 +1634,9 @@ function renderSvgAndInspector() {
 }
 
 function renderSnpBadge(guideId) {
+  if (CURRENT && (CURRENT.report.species_id || 'human') !== 'human') {
+    return '<span class="pill pill-INFO" title="Sequence your wild-type lab strain or stock across the target exon with the paired PCR primers">Seq WT Strain</span>';
+  }
   const info = SNP_CACHE[guideId];
   if (!info) {
     return '<span class="pill pill-INFO" style="font-weight:600;">Checking gnomAD...</span>';
@@ -1517,9 +1753,38 @@ function renderExonTable() {
 function renderReport() {
   const r = CURRENT.report;
   const tx = r.primary_transcript;
+  const isHuman = (r.species_id || 'human') === 'human';
+  const spCommon = r.species_common_name || 'Human';
+  const spSci = r.species_scientific_name || 'Homo sapiens';
+  const orthNote = (!isHuman && r.human_ortholog_symbol) ? ` • 1:1 Human Ortholog: ${r.human_ortholog_symbol}` : '';
+
   document.getElementById('res-title').innerHTML = `${esc(r.gene_symbol)} <span style="font-weight:400;color:var(--muted);font-size:16px;">(${esc(r.ensembl_id)})</span>`;
-  document.getElementById('res-sub').textContent = `${r.gene_description} • ${r.assembly} ${r.chrom} (${r.strand >= 0 ? '+' : '-'} strand) • Primary transcript: ${tx.transcript_id} (${tx.protein_length_aa} aa)`;
+  document.getElementById('res-sub').textContent = `${spSci} (${spCommon})${orthNote} • ${r.gene_description} • ${r.assembly} ${r.chrom} (${r.strand >= 0 ? '+' : '-'} strand) • Primary transcript: ${tx.transcript_id} (${tx.protein_length_aa} aa)`;
   updateBasketUi();
+
+  document.getElementById('lbl-kpi-1').textContent = isHuman
+    ? 'DepMap Fitness & CCLE Genetics'
+    : `Conserved Fitness${r.human_ortholog_symbol ? ` (via ${r.human_ortholog_symbol})` : ''}`;
+  document.getElementById('lbl-kpi-2').textContent = isHuman
+    ? 'Human LoF Constraint (gnomAD)'
+    : 'Ortholog LoF Constraint (gnomAD)';
+  document.getElementById('lbl-kpi-3').textContent = isHuman
+    ? 'GTEx Baseline Expression'
+    : 'Ortholog Baseline Expression';
+  document.getElementById('exon-coord-th').textContent = `Target Region (${r.assembly})`;
+  document.getElementById('paralog-hdr').textContent = `5. ${spCommon} Paralog Buffering Check`;
+
+  const guidesSub = document.getElementById('guides-sub');
+  if (isHuman) {
+    guidesSub.innerHTML = 'Includes U6 Golden Gate oligos (<code>BsmBI</code>/<code>BbsI</code>), paired 430–740 bp TIDE/ICE PCR primers, and background gnomAD common SNP screening (MAF &ge;1%).';
+  } else if (r.species_id === 'fly') {
+    guidesSub.innerHTML = 'Includes U6 Golden Gate oligos (note: swap <code>5&prime;-CACC</code> &rarr; <code>5&prime;-GTCG</code> if cloning into Drosophila <code>pCFD3</code> <code>dU6:3</code>) and paired 430–740 bp TIDE/ICE PCR primers.';
+  } else {
+    guidesSub.innerHTML = `Includes U6 Golden Gate oligos (<code>BsmBI</code>/<code>BbsI</code>) and paired 430–740 bp TIDE/ICE PCR primers on <code>${esc(r.assembly)}</code>.`;
+  }
+
+  document.getElementById('offtarget-assembly-note').innerHTML = `
+    <strong>Before ordering oligos — 10-second genome-wide off-target check:</strong> Local rules rank on-target quality &amp; biological safety; paste your chosen 2–3 spacers into <strong>Cas-OFFinder</strong>${(r.species_id === 'human' || r.species_id === 'mouse' || r.species_id === 'rat') ? ' or <strong>Broad CRISPick</strong>' : ''} to verify zero 0–2 mismatch off-target sites across <strong>${esc(r.assembly)}</strong>.`;
 
   const vEl = document.getElementById('res-verdict');
   vEl.className = `verdict verdict-${r.modality.risk_level}`;
@@ -1606,7 +1871,7 @@ function renderReport() {
         <span class="pill pill-${p.buffering_risk === 'HIGH' ? 'AVOID' : (p.buffering_risk === 'MODERATE' ? 'CAUTION' : 'RECOMMENDED')}">${esc(p.buffering_risk)}</span>
         <button type="button" class="btn-secondary" onclick="inspectParalogByIndex(${idx})">Inspect &rarr;</button>
       </div>
-    </div>`).join('') : '<p style="font-size:13px;color:var(--muted);">No human paralogs >= 35% sequence identity.</p>';
+    </div>`).join('') : `<p style="font-size:13px;color:var(--muted);">No ${esc(spCommon.toLowerCase())} paralogs >= 35% sequence identity.</p>`;
 
   const val = r.validation;
   const tools = val.orthogonal_chemical_tools || [];
@@ -1640,18 +1905,31 @@ function downloadReport(kind) {
 // ==================== BATCH HIT-LIST TRIAGE ====================
 
 function loadDemoBatch() {
-  document.getElementById('batch-genes').value = 'BRD4, SMARCA4, PLK1, SOX2, STAT3, KRAS';
+  const sp = getScopeSpecies('batch');
+  const meta = SPECIES_META[sp];
+  document.getElementById('batch-genes').value = meta.demoBatch;
   document.getElementById('batch-tissue').value = '';
   setCellValue('batch', '');
   runBatchTriage();
 }
 
 async function runBatchTriage() {
+  const sp = getScopeSpecies('batch');
   const raw = document.getElementById('batch-genes').value || '';
-  const tokens = [...new Set(raw.split(/[\s,;]+/).map(s => s.trim().toUpperCase()).filter(Boolean))].slice(0, 30);
+  const seenLower = new Set();
+  const tokens = [];
+  raw.split(/[\s,;]+/).forEach(tok => {
+    const clean = tok.trim();
+    if (!clean) return;
+    const key = clean.toLowerCase();
+    if (seenLower.has(key)) return;
+    seenLower.add(key);
+    tokens.push(sp === 'human' ? clean.toUpperCase() : clean);
+  });
+  tokens.splice(30);
   if (!tokens.length) return;
 
-  const tissue = document.getElementById('batch-tissue').value.trim();
+  const tissue = sp === 'human' ? document.getElementById('batch-tissue').value.trim() : '';
   const cell = document.getElementById('batch-cell').value.trim();
   const btn = document.getElementById('batch-run-btn');
   const prog = document.getElementById('batch-progress');
@@ -1669,8 +1947,8 @@ async function runBatchTriage() {
   let cursor = 0;
   const updateProg = () => {
     prog.textContent = done < tokens.length
-      ? `Completed ${done}/${tokens.length} genes (running 3 parallel checks)...`
-      : `Finished all ${tokens.length} genes! Click any gene row in the matrix below to view its full report right underneath.`;
+      ? `Completed ${done}/${tokens.length} ${SPECIES_META[sp].label} genes (running 3 parallel checks)...`
+      : `Finished all ${tokens.length} ${SPECIES_META[sp].label} genes! Click any gene row in the matrix below to view its full report right underneath.`;
   };
   updateProg();
 
@@ -1679,7 +1957,7 @@ async function runBatchTriage() {
       const idx = cursor++;
       const row = BATCH_ROWS[idx];
       try {
-        const params = new URLSearchParams({ _route: 'check', gene: row.gene });
+        const params = new URLSearchParams({ _route: 'check', species: sp, gene: row.gene });
         if (tissue) params.set('tissue', tissue);
         if (cell) params.set('cell_line', cell);
         const resp = await fetch(`/api/check?${params.toString()}`, { cache: 'no-store' });
@@ -1820,9 +2098,10 @@ function openBatchRow(idx, shouldScroll = true) {
   const row = BATCH_ROWS[idx];
   if (!row || !row.payload) return;
   SELECTED_BATCH_IDX = idx;
-  const tissue = document.getElementById('batch-tissue').value.trim();
+  const sp = row.payload.report.species_id || getScopeSpecies('batch');
+  const tissue = sp === 'human' ? document.getElementById('batch-tissue').value.trim() : '';
   const cell = document.getElementById('batch-cell').value.trim();
-  syncUrlPermalink(row.payload.report.gene_symbol, tissue, cell);
+  syncUrlPermalink(row.payload.report.gene_symbol, tissue, cell, sp);
   renderBatchTable();
   applyLoadedPayload(row.payload);
   renderBatchReportNav();
@@ -1834,7 +2113,7 @@ function openBatchRow(idx, shouldScroll = true) {
 function exportBatchCsv() {
   const ready = BATCH_ROWS.filter(r => r.payload);
   if (!ready.length) return;
-  const lines = ['Gene,Ensembl_ID,Risk_Level,Recommended_Modality,Chronos,CCLE_Genetics,Tissue_TPM,Top_Paralog,Best_Exon,Top_Spacer_20nt,Top_U6_Fwd_Oligo,Top_U6_Rev_Oligo'];
+  const lines = ['Species,Assembly,Gene,Gene_ID,Risk_Level,Recommended_Modality,Chronos,CCLE_Genetics,Tissue_TPM,Top_Paralog,Best_Exon,Top_Spacer_20nt,Top_U6_Fwd_Oligo,Top_U6_Rev_Oligo'];
   ready.forEach(({ payload }) => {
     const r = payload.report;
     const ess = r.essentiality;
@@ -1846,6 +2125,8 @@ function exportBatchCsv() {
     const bestEx = r.exons.filter(e => e.is_coding).sort((a, b) => b.priority_score - a.priority_score)[0];
     const topG = (r.recommended_guides && r.recommended_guides[0]) || (r.crispri_guides && r.crispri_guides[0]);
     lines.push([
+      r.species_common_name || 'Human',
+      r.assembly,
       r.gene_symbol,
       r.ensembl_id,
       r.modality.risk_level,
@@ -1864,11 +2145,21 @@ function exportBatchCsv() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  renderExampleChips();
   const urlParams = new URLSearchParams(window.location.search);
+  const qSpecies = (urlParams.get('species') || '').trim().toLowerCase();
+  if (qSpecies && SPECIES_META[qSpecies]) {
+    document.getElementById('species-input').value = qSpecies;
+    document.getElementById('batch-species').value = qSpecies;
+    onSpeciesChange('single', false);
+    onSpeciesChange('batch', false);
+  }
   const qGene = urlParams.get('gene');
   const qTissue = urlParams.get('tissue');
   const qCell = urlParams.get('cell_line');
-  if (qTissue !== null) document.getElementById('tissue-input').value = qTissue;
+  if (qTissue !== null && getScopeSpecies('single') === 'human') {
+    document.getElementById('tissue-input').value = qTissue;
+  }
   if (qCell !== null) setCellValue('single', qCell);
   if (qGene && qGene.trim()) {
     document.getElementById('gene-input').value = qGene.trim();
@@ -1886,7 +2177,7 @@ def make_handler(use_cache: bool = True) -> type[BaseHTTPRequestHandler]:
     shared_http = CachedHttpClient(use_cache=use_cache)
     shared_runner = PreflightRunner(http=shared_http, check_pams=True)
     hot_lock = threading.Lock()
-    hot_payloads: dict[tuple[str, Optional[str], Optional[str]], tuple[bytes, float]] = {}
+    hot_payloads: dict[tuple[str, str, Optional[str], Optional[str]], tuple[bytes, float]] = {}
 
     class PreflightRequestHandler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: Any) -> None:
@@ -1987,17 +2278,19 @@ def make_handler(use_cache: bool = True) -> type[BaseHTTPRequestHandler]:
 
             if path == "/api/check":
                 qs = urllib.parse.parse_qs(parsed.query)
+                species = (qs.get("species") or ["human"])[0].strip() or "human"
                 gene = (qs.get("gene") or [""])[0].strip()
                 tissue = (qs.get("tissue") or [""])[0].strip() or None
                 cell_line = (qs.get("cell_line") or [""])[0].strip() or None
                 if not gene:
                     self._send_json(
                         HTTPStatus.BAD_REQUEST,
-                        {"error": "Please provide a human gene symbol (e.g. STAT3, TP53, BRD4)."},
+                        {"error": "Please provide a gene symbol (e.g. STAT3, Trp53, smarca4a, Stat92E, cep-1)."},
                     )
                     return
 
                 hot_key = (
+                    species.lower(),
                     gene.upper(),
                     tissue.lower() if tissue else None,
                     cell_line.lower() if cell_line else None,
@@ -2010,7 +2303,12 @@ def make_handler(use_cache: bool = True) -> type[BaseHTTPRequestHandler]:
                         return
 
                 try:
-                    report = shared_runner.run(gene_query=gene, tissue=tissue, cell_line=cell_line)
+                    report = shared_runner.run(
+                        gene_query=gene,
+                        tissue=tissue,
+                        cell_line=cell_line,
+                        species=species,
+                    )
                 except ValueError as exc:
                     self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
                     return

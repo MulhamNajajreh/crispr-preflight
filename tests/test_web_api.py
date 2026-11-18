@@ -69,6 +69,12 @@ class TestWebAppRoutes(unittest.TestCase):
         data = json.loads(body.decode("utf-8"))
         self.assertIn("error", data)
 
+    def test_invalid_species_returns_400(self) -> None:
+        head, body = self._dispatch_get("/api/check?species=martian&gene=Trp53")
+        self.assertIn("400", head)
+        data = json.loads(body.decode("utf-8"))
+        self.assertIn("Unsupported species", data.get("error", ""))
+
     def test_snp_check_empty_specs_returns_200(self) -> None:
         head, body = self._dispatch_get("/api/snp-check?specs=%5B%5D")
         self.assertIn("200 OK", head)

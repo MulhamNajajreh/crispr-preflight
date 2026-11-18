@@ -9,6 +9,7 @@ from crispr_preflight.clients.ensembl import (
     EnsemblClient,
     deduplicate_protein_domains,
 )
+from crispr_preflight.clients.multispecies import MultiSpeciesClient
 from crispr_preflight.engine.exon_scorer import (
     count_spcas9_cut_sites,
     design_crispri_tss_guides,
@@ -20,6 +21,7 @@ from crispr_preflight.engine.exon_scorer import (
 )
 from crispr_preflight.engine.primers import calc_primer_tm, design_tide_ice_primers
 from crispr_preflight.models import ProteinDomain
+from crispr_preflight.species import SPECIES_REGISTRY, resolve_species
 
 
 class TestExonGeometryAndRules(unittest.TestCase):
@@ -357,6 +359,62 @@ class TestExonGeometryAndRules(unittest.TestCase):
         self.assertTrue(any(g.spacer_20nt == sp1 for g in guides_minus))
         gm = next(g for g in guides_minus if g.spacer_20nt == sp1)
         self.assertEqual(gm.tss_offset_bp, 60)
+
+    def test_multispecies_registry_and_mygene_zero_based_conversion(self) -> None:
+        """Verify all 6 organism aliases resolve cleanly and 0-based half-open MyGene exons convert to 1-based closed."""
+        self.assertEqual(set(SPECIES_REGISTRY.keys()), {"human", "mouse", "rat", "zebrafish", "fly", "worm"})
+        self.assertEqual(resolve_species("Mus musculus").assembly, "GRCm39")
+        self.assertEqual(resolve_species("danio_rerio").assembly, "GRCz11")
+        self.assertEqual(resolve_species("drosophila").assembly, "BDGP6.46")
+        self.assertEqual(resolve_species("c. elegans").assembly, "WBcel235")
+        self.assertEqual(resolve_species("rn").assembly, "GRCr8")
+        with self.assertRaises(ValueError):
+            resolve_species("unicorn")
+
+        # Synthetic 2-exon mouse MyGene hit (0-based half-open coordinates):
+        # Exon 1: [1000, 1200) -> 1-based closed [1001, 1200] (200 bp); CDS starts at 1050 -> 1-based 1051 (150 bp coding)
+        # Exon 2: [2000, 2300) -> 1-based closed [2001, 2300] (300 bp); CDS ends at 2150 -> 1-based 2150 (150 bp coding)
+        # Total coding = 300 bp -> 99 aa + stop codon!
+        hit = {
+            "symbol": "Trp53",
+            "name": "transformation related protein 53",
+            "ensembl": [
+                {"gene": "ENSMSIG00000012345"},  # Non-reference mouse strain should be skipped in favor of ENSMUSG!
+                {"gene": "ENSMUSG00000059552"},
+            ],
+            "exons": {
+                "NM_011640": {
+                    "chr": "11",
+                    "strand": 1,
+                    "txstart": 1000,
+                    "txend": 2300,
+                    "cdsstart": 1050,
+                    "cdsend": 2150,
+                    "position": [[1000, 1200], [2000, 2300]],
+                }
+            },
+        }
+        mouse_cfg = resolve_species("mouse")
+        ens_id = MultiSpeciesClient._extract_ensembl_gene_id(hit["ensembl"], "mouse")
+        self.assertEqual(ens_id, "ENSMUSG00000059552")
+
+        gene_obj, tss_pos = MultiSpeciesClient.build_gene_from_mygene_exons(
+            hit=hit,
+            gene_id=ens_id or "ENSMUSG00000059552",
+            gene_symbol="Trp53",
+            description="transformation related protein 53",
+            species_cfg=mouse_cfg,
+        )
+        self.assertIsNotNone(gene_obj)
+        assert gene_obj is not None
+        self.assertEqual(gene_obj["id"], "ENSMUSG00000059552")
+        self.assertEqual(gene_obj["assembly_name"], "GRCm39")
+        self.assertEqual(tss_pos, 1001)
+        tx = gene_obj["Transcript"][0]
+        self.assertEqual(tx["Translation"]["start"], 1051)
+        self.assertEqual(tx["Translation"]["end"], 2150)
+        self.assertEqual(tx["Translation"]["length"], 99)
+        self.assertEqual([(e["start"], e["end"]) for e in tx["Exon"]], [(1001, 1200), (2001, 2300)])
 
 
 if __name__ == "__main__":

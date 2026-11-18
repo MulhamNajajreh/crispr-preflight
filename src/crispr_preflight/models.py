@@ -257,6 +257,10 @@ class PreflightReport:
     crispri_guides: list[GuideCandidate] = field(default_factory=list)
     tss_genomic_pos: Optional[int] = None
     cell_line_genetics: Optional[CellLineAlterationProfile] = None
+    species_id: str = "human"
+    species_scientific_name: str = "Homo sapiens"
+    species_common_name: str = "Human"
+    human_ortholog_symbol: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the complete report to a JSON-compatible dictionary."""

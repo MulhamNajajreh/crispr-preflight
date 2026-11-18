@@ -1,12 +1,19 @@
 # `crispr-preflight`
 
-**Pre-experiment biological flight check for human CRISPR knockout, CRISPRi, and target validation experiments.**
+**Pre-experiment biological flight check for CRISPR knockout, CRISPRi, and target validation across Human, Mouse, Rat, Zebrafish, *Drosophila*, and *C. elegans*.**
 
-Before you order sgRNA oligos and spend weeks cloning guides, selecting cells, and running Western blots, `crispr-preflight` checks **whether standard single-gene Cas9 knockout is biologically valid** in your tissue/cell-line model, **which coding exons actually destroy protein function**, **designs ready-to-order cloning oligos + genotyping primers**, and **plans bench validation without false-clean Westerns**.
+Before you order sgRNA oligos and spend weeks cloning guides, selecting cells or F0 crispants, and running Western blots, `crispr-preflight` checks **whether standard single-gene Cas9 knockout is biologically valid** in your organism and model system, **which coding exons actually destroy protein function**, **designs ready-to-order cloning oligos + genotyping primers**, and **plans bench validation without false-clean Westerns**.
 
+- **6 flagship research organisms supported out of the box:**
+  - **Human** — *Homo sapiens* (`GRCh38`)
+  - **Mouse** — *Mus musculus* (`GRCm39`)
+  - **Rat** — *Rattus norvegicus* (`GRCr8`)
+  - **Zebrafish** — *Danio rerio* (`GRCz11`)
+  - **Fruit Fly** — *Drosophila melanogaster* (`BDGP6.46`)
+  - **Roundworm** — *Caenorhabditis elegans* (`WBcel235`)
 - **Zero third-party dependencies:** 100% Python (`>=3.9`) standard library — installs in seconds with `pip` or `uv` with zero compiled C/Rust dependencies.
-- **Zero API keys required:** Queries open public biological APIs (**EMBL-EBI Proteins & InterPro**, **NCBI GRCh38 RefSeq**, **Ensembl GRCh38**, **Open Targets v4 / DepMap Chronos**, **cBioPortal CCLE**, **gnomAD**, **GTEx v10**, **Human Protein Atlas**, and **MyGene / MyVariant**) in parallel (~2–2.5s cold, <0.1s cached).
-- **Zero black boxes:** Every warning, `0–100` exon priority score, and guide candidate prints its exact biological math and `GRCh38` coordinates.
+- **Zero API keys required:** Queries open public biological APIs (**EMBL-EBI Proteins & InterPro**, **NCBI RefSeq & Datasets v2**, **Ensembl**, **Alliance of Genome Resources (DIOPT)**, **Open Targets v4 / DepMap Chronos**, **cBioPortal CCLE**, **gnomAD**, **GTEx v10**, **Human Protein Atlas**, and **MyGene / MyVariant**) in parallel (~1.6–2.5s cold, <0.1s cached).
+- **Zero black boxes:** Every warning, `0–100` exon priority score, and guide candidate prints its exact biological math and reference genome coordinates.
 
 ---
 
@@ -78,10 +85,14 @@ Then open **`http://127.0.0.1:7860`** in your browser to search single genes, br
 
 ### 2. Run a Single-Gene Flight Check in the Terminal
 
-Try auditing `SMARCA4` in lung (`A549` cells) and saving an interactive HTML report:
+Try auditing human `SMARCA4` in lung (`A549` cells) or mouse `Smarca4` on `GRCm39`:
 
 ```bash
+# Human (default: GRCh38)
 crispr-preflight check SMARCA4 --tissue lung --cell-line A549 --html SMARCA4_report.html
+
+# Mouse (GRCm39) — also supports: rat, zebrafish, fly, worm
+crispr-preflight check Smarca4 --species mouse --cell-line B16-F10 --html Mouse_Smarca4.html
 ```
 
 ### 3. Batch Triage a Hit List (e.g. from RNA-seq or a CRISPR Screen)
@@ -89,6 +100,9 @@ crispr-preflight check SMARCA4 --tissue lung --cell-line A549 --html SMARCA4_rep
 ```bash
 crispr-preflight batch SMARCA4,SOX2,PLK1,STAT3 --tissue lung --cell-line A549 \
   --output batch_summary.csv
+
+# Multi-species batch triage (e.g. Mouse screen hits)
+crispr-preflight batch Trp53,Smarca4,Plk1,Sox2 --species mouse --output mouse_hits.csv
 ```
 
 ### 4. Run with Docker (or Hugging Face Spaces)
@@ -130,9 +144,10 @@ python3 -m unittest discover -s tests -v
 
 `crispr-preflight` aggregates live annotations from open biological databases. When publishing or redistributing outputs, please cite and comply with each resource's terms:
 
-- **EMBL-EBI Proteins & InterPro APIs (`GRCh38` / `Pfam`):** https://www.ebi.ac.uk/about/terms-of-use
-- **NCBI E-utilities (`GRCh38` RefSeq):** https://www.ncbi.nlm.nih.gov/home/about/policies/
-- **Ensembl REST API (`GRCh38`):** https://useast.ensembl.org/info/about/legal/disclaimer.html
+- **EMBL-EBI Proteins & InterPro APIs (`Pfam` / `UniProt`):** https://www.ebi.ac.uk/about/terms-of-use
+- **NCBI E-utilities & Datasets v2 (`GRCh38`, `GRCm39`, `GRCr8`, `GRCz11`, `BDGP6.46`, `WBcel235`):** https://www.ncbi.nlm.nih.gov/home/about/policies/
+- **Alliance of Genome Resources (`MGI`, `RGD`, `ZFIN`, `FlyBase`, `WormBase` DIOPT Paralogs & Orthologs):** https://www.alliancegenome.org/
+- **Ensembl REST API:** https://useast.ensembl.org/info/about/legal/disclaimer.html
 - **Open Targets Platform GraphQL API (DepMap Chronos & Chemical Probes):** https://platform-docs.opentargets.org/licence
 - **cBioPortal / CCLE (`ccle_broad_2019`):** https://www.cbioportal.org/
 - **gnomAD (Genome Aggregation Database):** https://gnomad.broadinstitute.org/policies

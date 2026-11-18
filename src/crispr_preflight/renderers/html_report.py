@@ -236,7 +236,7 @@ def render_html(report: PreflightReport) -> str:
             "<strong>Off-target verification step:</strong> These 20-nt spacers are filtered for U6 Pol III compatibility (no <code>TTTT</code>), GC balance, Graf PAM-proximal efficiency, and BsmBI/BbsI cloning overhangs. "
             "Verify zero 0–2 mismatch genomic off-targets in <a href=\"http://www.rgenome.net/cas-offinder/\" target=\"_blank\" rel=\"noopener\">Cas-OFFinder</a> or "
             "<a href=\"https://portals.broadinstitute.org/gppx/crispick/public\" target=\"_blank\" rel=\"noopener\">Broad CRISPick</a> before ordering oligos.</p>"
-            "<table><thead><tr><th>Guide ID</th><th>Exon &amp; AA</th><th>20-nt Spacer + PAM</th><th>Cut Pos (GRCh38)</th><th>GC% &amp; Score</th><th>U6 Golden Gate Oligos</th><th>TIDE / Synthego ICE PCR Primers</th></tr></thead>"
+            f"<table><thead><tr><th>Guide ID</th><th>Exon &amp; AA</th><th>20-nt Spacer + PAM</th><th>Cut Pos ({esc(report.assembly)})</th><th>GC% &amp; Score</th><th>U6 Golden Gate Oligos</th><th>TIDE / Synthego ICE PCR Primers</th></tr></thead>"
             f"<tbody>{''.join(g_rows)}</tbody></table>"
         )
 
@@ -253,10 +253,10 @@ def render_html(report: PreflightReport) -> str:
                 f"<td>{g.gc_percent}% GC ({g.sequence_score}/100)</td>"
                 f"<td><code>5'-{esc(g.cloning_fwd_oligo)}-3'</code><br/><code>5'-{esc(g.cloning_rev_oligo)}-3'</code></td></tr>"
             )
-        tss_lbl = f" (GRCh38 <code>{esc(report.chrom)}:{report.tss_genomic_pos}</code>)" if report.tss_genomic_pos else ""
+        tss_lbl = f" ({esc(report.assembly)} <code>{esc(report.chrom)}:{report.tss_genomic_pos}</code>)" if report.tss_genomic_pos else ""
         crispri_section = (
             f"<h2>4b. Promoter CRISPRi (dCas9-KRAB) Candidate Guides (TSS -50 to +300 bp){tss_lbl}</h2>"
-            "<table><thead><tr><th>Guide ID</th><th>TSS Offset</th><th>20-nt Spacer + PAM</th><th>Target Pos (GRCh38)</th><th>GC% &amp; Score</th><th>U6 Golden Gate Oligos</th></tr></thead>"
+            f"<table><thead><tr><th>Guide ID</th><th>TSS Offset</th><th>20-nt Spacer + PAM</th><th>Target Pos ({esc(report.assembly)})</th><th>GC% &amp; Score</th><th>U6 Golden Gate Oligos</th></tr></thead>"
             f"<tbody>{''.join(ci_rows)}</tbody></table>"
         )
 
@@ -271,7 +271,7 @@ def render_html(report: PreflightReport) -> str:
                 f"<td>{esc(tpm_v)}</td><td><strong>{esc(p.buffering_risk)}</strong></td></tr>"
             )
         paralog_section = (
-            "<h2>5. Human Paralog Buffering Check</h2>"
+            f"<h2>5. {esc(report.species_common_name)} Paralog Buffering Check</h2>"
             "<table><thead><tr><th>Paralog</th><th>Query % ID</th><th>Target % ID</th><th>Tissue Expression</th><th>Buffering Risk</th></tr></thead>"
             f"<tbody>{''.join(p_rows)}</tbody></table>"
         )
@@ -352,7 +352,7 @@ def render_html(report: PreflightReport) -> str:
 <body>
 <div class="container">
   <h1>CRISPR-Preflight Biological Dossier: {esc(report.gene_symbol)} <span style="font-weight:400;color:#64748b;">({esc(report.ensembl_id)})</span></h1>
-  <div class="sub">{esc(report.gene_description)} &bull; {esc(report.assembly)} <code>{esc(report.chrom)}</code> ({'+' if report.strand >= 0 else '-'} strand) &bull; Primary transcript <code>{esc(tx.transcript_id)}</code> ({tx.num_exons} exons, {tx.protein_length_aa} aa)</div>
+  <div class="sub"><em>{esc(report.species_scientific_name)}</em> ({esc(report.species_common_name)}) &bull; {esc(report.gene_description)} &bull; {esc(report.assembly)} <code>{esc(report.chrom)}</code> ({'+' if report.strand >= 0 else '-'} strand) &bull; Primary transcript <code>{esc(tx.transcript_id)}</code> ({tx.num_exons} exons, {tx.protein_length_aa} aa)</div>
 
   <div class="verdict">
     <div style="font-size:12px;font-weight:700;text-transform:uppercase;">Recommended Perturbation Modality ({esc(mod.risk_level)} Trap Risk)</div>

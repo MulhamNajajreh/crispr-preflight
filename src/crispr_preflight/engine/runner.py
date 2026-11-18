@@ -14,6 +14,7 @@ from crispr_preflight.clients.ensembl import (
 )
 from crispr_preflight.clients.expression import ExpressionClient
 from crispr_preflight.clients.gnomad import GnomadClient
+from crispr_preflight.clients.multispecies import MultiSpeciesClient
 from crispr_preflight.clients.opentargets import OpenTargetsClient
 from crispr_preflight.engine.exon_scorer import (
     design_crispri_tss_guides,
@@ -26,11 +27,14 @@ from crispr_preflight.engine.modality import classify_paralog_risks, evaluate_mo
 from crispr_preflight.engine.validation import build_validation_plan
 from crispr_preflight.models import (
     CellLineAlterationProfile,
+    ChemicalTool,
+    EssentialityProfile,
     ExpressionProfile,
     GuideCandidate,
     PreflightReport,
     ProteinDomain,
 )
+from crispr_preflight.species import SpeciesConfig, resolve_species
 
 
 class PreflightRunner:
@@ -48,6 +52,7 @@ class PreflightRunner:
         self.gnomad = GnomadClient(self.http)
         self.expression = ExpressionClient(self.http)
         self.cellline_variants = CellLineAndVariantClient(self.http)
+        self.multispecies = MultiSpeciesClient(self.http, self.ensembl)
         self.check_pams = check_pams
         self.query_gnomad_direct = query_gnomad_direct
 
@@ -56,13 +61,18 @@ class PreflightRunner:
         gene_query: str,
         tissue: Optional[str] = None,
         cell_line: Optional[str] = None,
+        species: Optional[str] = "human",
     ) -> PreflightReport:
-        """Execute end-to-end biological flight check for a human gene."""
+        """Execute end-to-end biological flight check for a target gene in any supported organism."""
         cleaned_query = gene_query.strip()
         if not cleaned_query:
-            raise ValueError("Please provide a human gene symbol, alias, or Ensembl ID.")
+            raise ValueError("Please provide a gene symbol, alias, or gene ID.")
         if len(cleaned_query) > 80:
-            raise ValueError("Gene query is too long; provide a single human gene symbol or Ensembl ID.")
+            raise ValueError("Gene query is too long; provide a single gene symbol or ID.")
+
+        species_cfg = resolve_species(species)
+        if species_cfg.species_id != "human":
+            return self._run_nonhuman(cleaned_query, species_cfg)
 
         sources_used: list[str] = []
         used_ensembl_rest = False
@@ -429,4 +439,270 @@ class PreflightRunner:
             crispri_guides=crispri_guides,
             tss_genomic_pos=tss_pos,
             cell_line_genetics=ccle_profile,
+            species_id="human",
+            species_scientific_name="Homo sapiens",
+            species_common_name="Human",
+        )
+
+    def _run_nonhuman(
+        self,
+        cleaned_query: str,
+        species_cfg: SpeciesConfig,
+    ) -> PreflightReport:
+        """Fast (~1.6-2.4s cold) multi-species pipeline for Mouse, Rat, Zebrafish, Fly, and Worm."""
+        sources_used: list[str] = [f"MyGene.info v3 ({species_cfg.scientific_name})"]
+        hit = self.multispecies.query_mygene_hit(cleaned_query, species_cfg)
+
+        gene_symbol = str(hit.get("symbol") or cleaned_query)
+        raw_desc = str(hit.get("name") or "")
+        entrez_raw = hit.get("entrezgene")
+        entrez_id = int(entrez_raw) if entrez_raw is not None else None
+        ens_id = self.multispecies._extract_ensembl_gene_id(hit.get("ensembl"), species_cfg.species_id)
+        mod_curie = self.multispecies._extract_mod_curie(hit, species_cfg.species_id)
+        gene_id = ens_id or mod_curie or (f"NCBI:{entrez_id}" if entrez_id else gene_symbol)
+        swissprot_id = self.multispecies._extract_swissprot(hit.get("uniprot")) or ""
+
+        def _build_species_gene_model() -> tuple[dict[str, Any], Optional[int], list[str], Optional[dict[str, Any]]]:
+            extra_sources: list[str] = []
+            ebi_payload: Optional[dict[str, Any]] = None
+
+            # 1. Mouse, Zebrafish, Fly, Worm: MyGene RefSeq `exons` is verified 100% nucleotide-exact on GRCm39/GRCz11/BDGP6.46/WBcel235
+            if species_cfg.species_id in ("mouse", "zebrafish", "fly", "worm"):
+                g_my, tss_my = self.multispecies.build_gene_from_mygene_exons(
+                    hit, gene_id, gene_symbol, raw_desc, species_cfg
+                )
+                if g_my is not None:
+                    return g_my, tss_my, extra_sources, None
+
+            # 2. Rat (GRCr8) or fallback: NCBI Datasets v2 product_report (~280-400 ms, includes full UTR exons + TSS)
+            if entrez_id is not None:
+                g_ncbi, tss_ncbi = self.multispecies.build_gene_from_ncbi_product_report(
+                    entrez_id, gene_id, gene_symbol, raw_desc, species_cfg
+                )
+                if g_ncbi is not None:
+                    extra_sources.append(f"NCBI Datasets v2 ({species_cfg.assembly} RefSeq)")
+                    return g_ncbi, tss_ncbi, extra_sources, None
+
+            # 3. EBI Proteins coordinates fallback (GRCm39 / GRCr8)
+            if swissprot_id and species_cfg.species_id in ("mouse", "rat"):
+                ebi_payload = self.ensembl.fetch_ebi_coordinates(swissprot_id)
+                if isinstance(ebi_payload, dict) and ebi_payload.get("gnCoordinate"):
+                    c_len = len(str(ebi_payload.get("sequence") or ""))
+                    gc_matches = [
+                        gc
+                        for gc in (ebi_payload.get("gnCoordinate") or [])
+                        if isinstance(gc, dict)
+                        and species_cfg.assembly.upper()
+                        in str((gc.get("genomicLocation") or {}).get("assemblyName") or "").upper()
+                    ]
+                    if gc_matches:
+                        synth = self.ensembl._build_gene_from_ebi_coords(
+                            ensembl_id=gene_id,
+                            gene_symbol=gene_symbol,
+                            approved_name=raw_desc,
+                            gc_list=gc_matches,
+                            canon_seq_len=c_len,
+                        )
+                        if synth is not None:
+                            extra_sources.append(f"EMBL-EBI Proteins ({species_cfg.assembly})")
+                            return synth, None, extra_sources, ebi_payload
+
+            raise ValueError(
+                f"Gene '{gene_symbol}' has no annotated protein-coding transcripts with genomic coordinates on {species_cfg.assembly}."
+            )
+
+        with ThreadPoolExecutor(max_workers=4) as wave1:
+            fut_model = wave1.submit(_build_species_gene_model)
+            fut_ip = (
+                wave1.submit(self.ensembl.fetch_interpro_pfam_domains, swissprot_id, None)
+                if swissprot_id
+                else None
+            )
+            fut_alliance = wave1.submit(self.multispecies.fetch_alliance_paralogs_and_ortholog, mod_curie)
+
+            gene_data, tss_pos, extra_model_srcs, ebi_coord = fut_model.result()
+            sources_used.extend(extra_model_srcs)
+            domains = (
+                self.ensembl.merge_uniprot_domain_features(fut_ip.result(), ebi_coord)
+                if fut_ip is not None
+                else []
+            )
+            if domains:
+                sources_used.append("EMBL-EBI InterPro (Pfam Domains)")
+            raw_paralogs, human_orth_sym = fut_alliance.result()
+            if raw_paralogs or human_orth_sym:
+                sources_used.append("Alliance of Genome Resources (DIOPT Paralogs & Orthologs)")
+
+        chrom = str(gene_data.get("seq_region_name") or "")
+        strand = int(gene_data.get("strand") or 1)
+        primary_raw, primary_summary, alt_raws, alt_summaries = select_coding_isoforms(gene_data)
+
+        raw_exons = list(primary_raw.get("Exon") or [])
+        ordered_exons = (
+            sorted(raw_exons, key=lambda e: int(e["start"]))
+            if strand >= 0
+            else sorted(raw_exons, key=lambda e: int(e["end"]), reverse=True)
+        )
+        trans = primary_raw["Translation"]
+        t_s, t_e = min(int(trans["start"]), int(trans["end"])), max(int(trans["start"]), int(trans["end"]))
+        coding_intervals: list[tuple[int, int]] = []
+        for ex in ordered_exons:
+            es, ee = min(int(ex["start"]), int(ex["end"])), max(int(ex["start"]), int(ex["end"]))
+            ovs, ove = max(es, t_s), min(ee, t_e)
+            if ovs <= ove:
+                coding_intervals.append((ovs, ove))
+
+        if tss_pos is None and ordered_exons:
+            tss_pos = (
+                min(int(ordered_exons[0]["start"]), int(ordered_exons[0]["end"]))
+                if strand >= 0
+                else max(int(ordered_exons[0]["start"]), int(ordered_exons[0]["end"]))
+            )
+
+        flank_pad = 420
+        tss_iv: Optional[tuple[int, int]] = (
+            (max(1, tss_pos - 60), tss_pos + 60) if (self.check_pams and tss_pos) else None
+        )
+        fetch_intervals = list(coding_intervals)
+        if tss_iv is not None and tss_iv not in fetch_intervals:
+            fetch_intervals.append(tss_iv)
+
+        def _fetch_human_ortholog_context() -> tuple[EssentialityProfile, list[ChemicalTool]]:
+            if not human_orth_sym:
+                return EssentialityProfile(), []
+            h_meta = self.opentargets.resolve_target_metadata(human_orth_sym)
+            if not h_meta or not h_meta.get("ensembl_id"):
+                return EssentialityProfile(), []
+            h_ensg = str(h_meta["ensembl_id"])
+            ess, ot_c, tools, _ = self.opentargets.fetch_target_bundle(h_ensg, None, None, 5, 35.0)
+            if ot_c:
+                ess.gnomad_pli = ot_c.get("pli")
+                ess.gnomad_loeuf = ot_c.get("loeuf")
+                ess.gnomad_oe_lof = ot_c.get("oe_lof")
+            # Annotate chemical tools transparently as conserved human-ortholog modulators
+            tagged_tools: list[ChemicalTool] = []
+            for ct in tools:
+                tagged_tools.append(
+                    ChemicalTool(
+                        name=ct.name,
+                        identifier=ct.identifier,
+                        tool_type=ct.tool_type,
+                        mechanism_of_action=f"{ct.mechanism_of_action} [conserved target via human {human_orth_sym}]",
+                        quality_or_stage=ct.quality_or_stage,
+                        has_negative_control=ct.has_negative_control,
+                        source_url=ct.source_url,
+                    )
+                )
+            return ess, tagged_tools
+
+        with ThreadPoolExecutor(max_workers=3) as wave2:
+            fut_flanks = (
+                wave2.submit(
+                    self.ensembl.fetch_flanked_regions,
+                    chrom,
+                    fetch_intervals,
+                    flank_pad,
+                    species_cfg.nc_chrom_map,
+                    species_cfg.ensembl_name,
+                )
+                if self.check_pams and fetch_intervals
+                else None
+            )
+            fut_orth = wave2.submit(_fetch_human_ortholog_context) if human_orth_sym else None
+
+            flanked_seqs = fut_flanks.result() if fut_flanks is not None else None
+            essentiality, chem_tools = fut_orth.result() if fut_orth is not None else (EssentialityProfile(), [])
+
+        if flanked_seqs:
+            sources_used.append(f"NCBI E-utilities ({species_cfg.assembly} RefSeq)")
+        if essentiality.depmap_total_lines > 0 or chem_tools:
+            sources_used.append(f"Open Targets v4 (Ortholog Fitness & Probes via human {human_orth_sym})")
+
+        cds_seq = ""
+        if flanked_seqs and all(flanked_seqs.get(iv) for iv in coding_intervals):
+            cds_chunks: list[str] = []
+            for ovs, ove in coding_intervals:
+                fseq = flanked_seqs[(ovs, ove)] or ""
+                lpad = min(flank_pad, ovs - 1)
+                clen = ove - ovs + 1
+                chunk = fseq[lpad : lpad + clen]
+                cds_chunks.append(chunk if strand >= 0 else reverse_complement(chunk))
+            cds_seq = "".join(cds_chunks)
+
+        exons = score_transcript_exons(
+            chrom=chrom,
+            primary_tx=primary_raw,
+            alt_coding_txs=alt_raws,
+            domains=domains,
+            cds_seq=cds_seq,
+            flanked_seqs=flanked_seqs,
+            flank_pad=flank_pad,
+            gene_symbol=gene_symbol,
+        )
+        recommended_guides = select_top_gene_guides(exons, max_total=6)
+
+        crispri_guides: list[GuideCandidate] = []
+        if tss_pos and tss_iv and flanked_seqs and flanked_seqs.get(tss_iv):
+            tss_win_start = max(1, tss_iv[0] - flank_pad)
+            crispri_guides = design_crispri_tss_guides(
+                tss_window_plus_seq=flanked_seqs[tss_iv] or "",
+                window_genomic_start=tss_win_start,
+                tss_pos=tss_pos,
+                chrom=chrom,
+                gene_strand=strand,
+                gene_symbol=gene_symbol,
+                max_guides=5,
+            )
+
+        expr_profile = ExpressionProfile()
+        paralog_risks = classify_paralog_risks(raw_paralogs[:6], {})
+
+        modality = evaluate_modality(
+            gene_symbol=gene_symbol,
+            primary_isoform=primary_summary,
+            alt_isoforms=alt_summaries,
+            essentiality=essentiality,
+            expression=expr_profile,
+            paralogs=paralog_risks,
+            exons=exons,
+            cell_line_genetics=None,
+            species_id=species_cfg.species_id,
+            human_ortholog_symbol=human_orth_sym,
+        )
+
+        validation = build_validation_plan(
+            gene_symbol=gene_symbol,
+            primary_isoform=primary_summary,
+            exons=exons,
+            expression=expr_profile,
+            chemical_tools=chem_tools,
+        )
+
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return PreflightReport(
+            gene_symbol=gene_symbol,
+            ensembl_id=gene_id,
+            gene_description=raw_desc,
+            chrom=f"chr{chrom.replace('chr', '')}",
+            strand=strand,
+            assembly=species_cfg.assembly,
+            primary_transcript=primary_summary,
+            alternative_isoforms=alt_summaries,
+            essentiality=essentiality,
+            expression=expr_profile,
+            paralogs=paralog_risks,
+            modality=modality,
+            domains=domains,
+            exons=exons,
+            validation=validation,
+            data_sources_used=sources_used,
+            generated_at=now_iso,
+            recommended_guides=recommended_guides,
+            crispri_guides=crispri_guides,
+            tss_genomic_pos=tss_pos,
+            cell_line_genetics=None,
+            species_id=species_cfg.species_id,
+            species_scientific_name=species_cfg.scientific_name,
+            species_common_name=species_cfg.common_name,
+            human_ortholog_symbol=human_orth_sym,
         )

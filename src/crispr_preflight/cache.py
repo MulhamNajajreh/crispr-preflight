@@ -70,6 +70,8 @@ class CachedHttpClient:
             "www.cbioportal.org": 0.08,            # cBioPortal CCLE REST API
             "mygene.info": 0.08,                   # BioThings MyGene.info v3
             "myvariant.info": 0.08,                # BioThings MyVariant.info v1
+            "www.alliancegenome.org": 0.08,        # Alliance of Genome Resources Homology API
+            "api.ncbi.nlm.nih.gov": 0.12,          # NCBI Datasets v2 REST API
         }
         if self.use_cache:
             self._init_db()

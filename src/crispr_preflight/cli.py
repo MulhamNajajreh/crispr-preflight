@@ -32,11 +32,17 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- check ---
     p_check = subparsers.add_parser(
         "check",
-        help="Run a biological preflight check for a single human gene",
+        help="Run a biological preflight check for a single gene",
     )
-    p_check.add_argument("gene", help="HGNC gene symbol, alias (e.g. BRG1), or Ensembl ID (ENSG...)")
+    p_check.add_argument("gene", help="Gene symbol, alias (e.g. BRG1, Trp53, cep-1), or Ensembl/MOD ID")
     p_check.add_argument(
-        "-t", "--tissue", default=None, help="Target tissue/lineage context (e.g. lung, blood, brain, colon)"
+        "-s",
+        "--species",
+        default="human",
+        help="Model organism: human (default), mouse, rat, zebrafish, fly, or worm",
+    )
+    p_check.add_argument(
+        "-t", "--tissue", default=None, help="Target tissue/lineage context (human GTEx/DepMap, e.g. lung, blood)"
     )
     p_check.add_argument(
         "-c", "--cell-line", default=None, help="DepMap cell line name (e.g. A549, K562, MCF7, HeLa)"
@@ -57,6 +63,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_batch.add_argument(
         "targets",
         help="Path to text file with one gene per line, or comma-separated symbols (e.g. SMARCA4,SOX2,PLK1)",
+    )
+    p_batch.add_argument(
+        "-s",
+        "--species",
+        default="human",
+        help="Model organism: human (default), mouse, rat, zebrafish, fly, or worm",
     )
     p_batch.add_argument("-t", "--tissue", default=None, help="Target tissue/lineage context")
     p_batch.add_argument("-c", "--cell-line", default=None, help="DepMap cell line name")
@@ -120,7 +132,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         http = CachedHttpClient(use_cache=not args.no_cache)
         runner = PreflightRunner(http=http, check_pams=not args.no_pam)
         try:
-            report = runner.run(gene_query=args.gene, tissue=args.tissue, cell_line=args.cell_line)
+            report = runner.run(
+                gene_query=args.gene,
+                tissue=args.tissue,
+                cell_line=args.cell_line,
+                species=args.species,
+            )
         except Exception as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
@@ -167,7 +184,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         for idx, g in enumerate(genes, start=1):
             print(f"[{idx}/{len(genes)}] Auditing {g}...")
             try:
-                rep = runner.run(gene_query=g, tissue=args.tissue, cell_line=args.cell_line)
+                rep = runner.run(
+                    gene_query=g,
+                    tissue=args.tissue,
+                    cell_line=args.cell_line,
+                    species=args.species,
+                )
             except Exception as exc:
                 print(f"  [!] Failed on {g}: {exc}", file=sys.stderr)
                 rows_out.append({"gene": g, "status": f"ERROR: {exc}"})

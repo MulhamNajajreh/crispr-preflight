@@ -584,13 +584,16 @@ class EnsemblClient:
         chrom: str,
         intervals: list[tuple[int, int]],
         pad: int = 25,
+        nc_chrom_map: Optional[dict[str, str]] = None,
+        ensembl_species: str = "human",
     ) -> dict[tuple[int, int], Optional[str]]:
         """Batch-fetch +1 forward-strand genomic sequences for [start-pad, end+pad] windows."""
         if not intervals:
             return {}
 
+        active_nc_map = nc_chrom_map if nc_chrom_map is not None else GRCH38_NC_MAP
         clean_chr = str(chrom).replace("chr", "").upper()
-        nc_acc = GRCH38_NC_MAP.get(clean_chr)
+        nc_acc = active_nc_map.get(clean_chr) or active_nc_map.get(str(chrom).replace("chr", ""))
         if nc_acc:
             fast_res = self._fetch_flanked_via_ncbi(nc_acc, intervals, pad)
             if fast_res is not None and all(fast_res.get(iv) for iv in intervals):
@@ -609,7 +612,7 @@ class EnsemblClient:
                 region_specs.append(f"{chrom}:{p_start}..{p_end}:1")
                 spec_to_interval[j] = (s, e)
 
-            url = f"{ENSEMBL_BASE}/sequence/region/human"
+            url = f"{ENSEMBL_BASE}/sequence/region/{urllib.parse.quote(ensembl_species)}"
             try:
                 resp = self.http.fetch_json(
                     url,

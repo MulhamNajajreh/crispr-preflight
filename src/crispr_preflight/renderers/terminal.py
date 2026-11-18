@@ -52,7 +52,7 @@ def render_terminal(
     lines.append("=" * 92)
     lines.append(
         f" {st.bold('CRISPR-PREFLIGHT REPORT')}  |  {st.cyan(report.gene_symbol)} ({report.ensembl_id})  |  "
-        f"{report.assembly} {report.chrom} {strand_str}"
+        f"{report.species_common_name} {report.assembly} {report.chrom} {strand_str}"
     )
     if report.gene_description:
         lines.append(f" {st.dim(report.gene_description)}")

@@ -66,6 +66,8 @@ def evaluate_modality(
     paralogs: list[ParalogRisk],
     exons: list[ExonAudit],
     cell_line_genetics: Optional[CellLineAlterationProfile] = None,
+    species_id: str = "human",
+    human_ortholog_symbol: Optional[str] = None,
 ) -> ModalityRecommendation:
     """Produce a transparent, rule-based experimental modality verdict and trap warning list."""
     warnings: list[TrapWarning] = []
@@ -210,19 +212,25 @@ def evaluate_modality(
     elif (pan_frac is not None and pan_frac >= 0.75) or bool(essentiality.is_core_essential_ot):
         severe_essential = True
         pct = int((pan_frac or 0.8) * 100)
+        orth_tag = (
+            f" [via 1:1 human ortholog {human_ortholog_symbol}]"
+            if (species_id != "human" and human_ortholog_symbol)
+            else ""
+        )
         warnings.append(
             TrapWarning(
                 trap_id="PAN_ESSENTIAL_ESCAPER",
-                title=f"Pan-Essential Gene ({pct}% of DepMap cell lines have Chronos <= -1.0)",
+                title=f"Core Pan-Essential Fitness Gene{orth_tag} ({pct}% DepMap lines <= -1.0)",
                 severity="HIGH",
                 explanation=(
-                    f"{gene_symbol} behaves as a core fitness gene across cancer lineages "
-                    f"(median Chronos = {essentiality.depmap_median_chronos}). Prolonged selection or single-clone "
-                    "picking will enrich for in-frame (-3 bp) functional escapers or non-edited cells."
+                    f"{gene_symbol}{orth_tag} behaves as a deeply conserved core cell-fitness gene "
+                    f"(median Chronos = {essentiality.depmap_median_chronos}). Prolonged culture selection or single-clone "
+                    "isolation strongly enriches for in-frame (-3 bp) hypomorphic escapers or unedited cells; "
+                    "homozygous whole-organism KO is frequently embryonic/larval lethal."
                 ),
                 bench_action=(
-                    "Use CRISPRi, acute degron tagging (dTAG), or acute pooled Cas9 timepoints (Day 4–7) "
-                    "paired with sequencing-based frameshift depletion tracking."
+                    "Use CRISPRi/conditional Cre-lox/RNAi knockdown, acute degron tagging (dTAG/AID), or assay F0/pooled "
+                    "populations early while targeting a conserved catalytic domain."
                 ),
             )
         )
@@ -345,6 +353,53 @@ def evaluate_modality(
                 ),
                 bench_action=(
                     "Prefer asymmetric exons or exons encoding catalytic residues, and place RT-PCR validation primers spanning flanking exons to catch exon skipping."
+                ),
+            )
+        )
+
+    if species_id == "zebrafish":
+        warnings.append(
+            TrapWarning(
+                trap_id="SPECIES_ZEBRAFISH_NOTE",
+                title="Zebrafish (GRCz11) Bench Note: Teleost Ohnologs & F0 Crispant Design",
+                severity="INFO",
+                explanation=(
+                    "Teleost fishes underwent an ancestral whole-genome duplication (~25% of genes retain 'a'/'b' ohnolog pairs) "
+                    "and exhibit high polymorphism across AB/TU/TL lab strains."
+                ),
+                bench_action=(
+                    "For F0 crispants, co-inject 2–3 non-overlapping Cas9 RNPs across top asymmetric exons (and co-target any high-identity 'a'/'b' paralog above); "
+                    "sequence your wild-type clutch with the TIDE/ICE PCR primers before microinjection."
+                ),
+            )
+        )
+    elif species_id == "fly":
+        warnings.append(
+            TrapWarning(
+                trap_id="SPECIES_FLY_NOTE",
+                title="Drosophila (BDGP6.46) Bench Note: U6 Vector Overhangs & Strain SNPs",
+                severity="INFO",
+                explanation=(
+                    "For Drosophila germline pCFD3 (dU6:3) cloning, BbsI overhangs use 5'-GTCG-3' (Fwd) / 5'-AAAC-3' (Rev) "
+                    "instead of mammalian 5'-CACC-3'; for S2R+ RNP or embryo injection, order the bare 20-nt crRNA/IVT template."
+                ),
+                bench_action=(
+                    "Sequence the target locus in your exact injection stock (e.g. nos-Cas9 / vasa-Cas9) using the paired PCR primers to rule out balancer/strain SNPs."
+                ),
+            )
+        )
+    elif species_id == "worm":
+        warnings.append(
+            TrapWarning(
+                trap_id="SPECIES_WORM_NOTE",
+                title="C. elegans (WBcel235) Bench Note: Gonad Cas9 RNP Delivery & dpy-10 Co-CRISPR",
+                severity="INFO",
+                explanation=(
+                    "Germline syncytial gonad microinjection in C. elegans is typically performed with synthetic crRNA:tracrRNA Cas9 RNPs "
+                    "(using the bare 20-nt spacer) rather than mammalian U6 lentiviral vectors."
+                ),
+                bench_action=(
+                    "Pair your top 20-nt crRNA spacer with a dpy-10 or pha-1 co-CRISPR marker and genotype F1 rollers/dumpies using the paired PCR primers."
                 ),
             )
         )

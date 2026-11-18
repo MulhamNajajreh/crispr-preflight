@@ -14,6 +14,7 @@ def render_markdown(report: PreflightReport) -> str:
     md: list[str] = [
         f"# CRISPR Preflight Dossier: `{report.gene_symbol}` (`{report.ensembl_id}`)",
         "",
+        f"- **Organism:** *{report.species_scientific_name}* ({report.species_common_name})",
         f"- **Description:** {report.gene_description or 'N/A'}",
         f"- **Genomic Locus ({report.assembly}):** `{report.chrom}` ({strand_label} strand)",
         f"- **Primary Transcript:** `{tx.transcript_id}` ({mane_label}, {tx.num_exons} exons, {tx.protein_length_aa} aa, +{len(report.alternative_isoforms)} alt coding isoforms)",
