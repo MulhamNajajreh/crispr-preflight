@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import tempfile
 import threading
 import time
 import urllib.error
@@ -74,20 +75,30 @@ class CachedHttpClient:
             self._init_db()
 
     def _init_db(self) -> None:
-        self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.cache_path) as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS responses (
-                    cache_key TEXT PRIMARY KEY,
-                    url TEXT NOT NULL,
-                    status_code INTEGER NOT NULL,
-                    body BLOB NOT NULL,
-                    fetched_at REAL NOT NULL
-                )
-                """
+        create_sql = """
+            CREATE TABLE IF NOT EXISTS responses (
+                cache_key TEXT PRIMARY KEY,
+                url TEXT NOT NULL,
+                status_code INTEGER NOT NULL,
+                body BLOB NOT NULL,
+                fetched_at REAL NOT NULL
             )
-            conn.commit()
+        """
+        for candidate in (
+            self.cache_path,
+            Path(tempfile.gettempdir()) / "crispr-preflight" / "http_cache_v1.sqlite3",
+        ):
+            try:
+                candidate.parent.mkdir(parents=True, exist_ok=True)
+                with sqlite3.connect(candidate) as conn:
+                    conn.execute(create_sql)
+                    conn.commit()
+                self.cache_path = candidate
+                return
+            except (OSError, sqlite3.Error):
+                continue
+        # Read-only container fallback: keep in-memory cache active without failing startup
+        self.use_cache = False
 
     @staticmethod
     def _make_key(method: str, url: str, headers: dict[str, str], body: Optional[bytes]) -> str:

@@ -1,4 +1,4 @@
-# Lightweight zero-dependency container for Hugging Face Spaces (sdk: docker, port 7860)
+# Lightweight zero-dependency container (Render, Cloud Run, Railway, or self-hosted Docker)
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir . \
 
 USER appuser
 ENV HOME=/home/appuser
+ENV PORT=7860
 EXPOSE 7860
 
-CMD ["crispr-preflight", "serve", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["sh", "-c", "crispr-preflight serve --host 0.0.0.0 --port ${PORT:-7860}"]

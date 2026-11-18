@@ -1,13 +1,3 @@
----
-title: CRISPR-Preflight
-emoji: 🧬
-colorFrom: teal
-colorTo: blue
-sdk: docker
-app_port: 7860
-license: mit
----
-
 # `crispr-preflight`
 
 **Pre-experiment biological flight check for human CRISPR knockout, CRISPRi, and target validation experiments.**
