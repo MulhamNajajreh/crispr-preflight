@@ -11,10 +11,16 @@ def render_markdown(report: PreflightReport) -> str:
     strand_label = "`+` forward" if report.strand >= 0 else "`-` reverse"
     mane_label = "MANE Select" if tx.is_mane_select else ("Ensembl Canonical" if tx.is_canonical else "Primary")
 
+    nuc_lbl = report.nuclease_label or "SpCas9"
+    pam_lbl = report.pam_label or "NGG"
+    sp_len = report.spacer_length_nt or 20
+    fmt_lbl = f"5'-{pam_lbl} + {sp_len}-nt" if report.nuclease_id == "cas12a" else f"{sp_len}-nt + {pam_lbl}"
+
     md: list[str] = [
         f"# CRISPR Preflight Dossier: `{report.gene_symbol}` (`{report.ensembl_id}`)",
         "",
         f"- **Organism:** *{report.species_scientific_name}* ({report.species_common_name})",
+        f"- **CRISPR Nuclease:** **{nuc_lbl}** (`{fmt_lbl}`)",
         f"- **Description:** {report.gene_description or 'N/A'}",
         f"- **Genomic Locus ({report.assembly}):** `{report.chrom}` ({strand_label} strand)",
         f"- **Primary Transcript:** `{tx.transcript_id}` ({mane_label}, {tx.num_exons} exons, {tx.protein_length_aa} aa, +{len(report.alternative_isoforms)} alt coding isoforms)",
@@ -71,7 +77,7 @@ def render_markdown(report: PreflightReport) -> str:
         [
             "## 3. Coding Exon Targetability Map",
             "",
-            "| Exon | Score | Tier | AA Span | Length (Symm) | Isoform Retention | SpCas9 NGG | NMD Status | Domains | CRISPick Region (GRCh38) |",
+            f"| Exon | Score | Tier | AA Span | Length (Symm) | Isoform Retention | {nuc_lbl} {pam_lbl} | NMD Status | Domains | Target Region ({report.assembly}) |",
             "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- | :--- | :--- |",
         ]
     )
@@ -94,11 +100,11 @@ def render_markdown(report: PreflightReport) -> str:
         md.extend(
             [
                 "",
-                "## 4. Candidate SpCas9 sgRNA Spacer Sequences (`20-nt + NGG`) & Genotyping Primers",
+                f"## 4. Candidate {nuc_lbl} Spacer Sequences (`{fmt_lbl}`) & Genotyping Primers",
                 "",
-                "> **Off-Target Safety Check:** Verify 0–2 mismatch genome-wide specificity in [Cas-OFFinder](http://www.rgenome.net/cas-offinder/) or [Broad CRISPick](https://portals.broadinstitute.org/gppx/crispick/public) before ordering oligos.",
+                f"> **Off-Target Safety Check:** Verify 0–2 mismatch genome-wide specificity (PAM = `{pam_lbl}`) in [Cas-OFFinder](http://www.rgenome.net/cas-offinder/) before ordering oligos.",
                 "",
-                "| Guide ID | Exon & Cut AA | 20-nt Spacer (`5'->3'`) | PAM | Cut Pos (GRCh38) | GC% | Score | U6 Fwd / Rev Oligos | TIDE / ICE PCR Primers (Fwd / Rev) |",
+                f"| Guide ID | Exon & Cut AA | {sp_len}-nt Spacer (`5'->3'`) | PAM | Cut Pos ({report.assembly}) | GC% | Score | Golden Gate Fwd / Rev Oligos | TIDE / ICE PCR Primers (Fwd / Rev) |",
                 "| :--- | :--- | :--- | :---: | :--- | :---: | :---: | :--- | :--- |",
             ]
         )

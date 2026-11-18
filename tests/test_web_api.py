@@ -75,6 +75,42 @@ class TestWebAppRoutes(unittest.TestCase):
         data = json.loads(body.decode("utf-8"))
         self.assertIn("Unsupported species", data.get("error", ""))
 
+    def test_invalid_nuclease_returns_400(self) -> None:
+        head, body = self._dispatch_get("/api/check?species=mouse&nuclease=talen99&gene=Trp53")
+        self.assertIn("400", head)
+        data = json.loads(body.decode("utf-8"))
+        self.assertIn("Unsupported nuclease", data.get("error", ""))
+
+    def test_rate_limiter_and_uri_length_guard(self) -> None:
+        # 1. Oversized URI (>2048 chars) returns 414 immediately
+        long_path = "/api/check?gene=" + ("A" * 2200)
+        head_long, _ = self._dispatch_get(long_path)
+        self.assertIn("414", head_long)
+
+        # 2. Sliding-window per-client rate limiter returns 429 + Retry-After when exceeded
+        handler_cls = make_handler(use_cache=False, rate_limit_per_min=2)
+        statuses: list[str] = []
+        for i in range(3):
+            raw_req = f"GET /api/snp-check?specs=%5B%5D&n={i} HTTP/1.1\r\nHost: localhost\r\n\r\n".encode("utf-8")
+            sock = _DummySocket(raw_req)
+            handler_cls(sock, ("127.0.0.1", 12345), None)  # type: ignore[arg-type]
+            h, _, _ = sock._wfile.getvalue().partition(b"\r\n\r\n")
+            statuses.append(h.decode("utf-8"))
+        self.assertIn("200 OK", statuses[0])
+        self.assertIn("200 OK", statuses[1])
+        self.assertIn("429", statuses[2])
+        self.assertIn("Retry-After: 30", statuses[2])
+
+    def test_vercel_serverless_entrypoint_routing(self) -> None:
+        from api.index import handler as vercel_handler
+
+        raw_req = b"GET /api/index?__route=health HTTP/1.1\r\nHost: crispr-preflight.vercel.app\r\n\r\n"
+        sock = _DummySocket(raw_req)
+        vercel_handler(sock, ("127.0.0.1", 12345), None)  # type: ignore[arg-type]
+        head, _, body = sock._wfile.getvalue().partition(b"\r\n\r\n")
+        self.assertIn("200 OK", head.decode("utf-8"))
+        self.assertEqual(json.loads(body.decode("utf-8"))["status"], "ok")
+
     def test_snp_check_empty_specs_returns_200(self) -> None:
         head, body = self._dispatch_get("/api/snp-check?specs=%5B%5D")
         self.assertIn("200 OK", head)

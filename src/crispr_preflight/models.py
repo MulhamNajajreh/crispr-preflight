@@ -82,6 +82,10 @@ class GuideCandidate:
     genomic_end_23bp: Optional[int] = None
     common_snp_note: Optional[str] = None
     genotyping_primers: Optional[GenotypingPrimerPair] = None
+    nuclease: str = "SpCas9"
+    spacer_length: int = 20
+    pam_orientation: str = "3prime"  # "3prime" ([spacer][PAM]) or "5prime" ([PAM][spacer])
+    cloning_backbone_hint: str = "U6 BsmBI/BbsI (lentiCRISPRv2 / PX459)"
 
 
 @dataclass
@@ -261,6 +265,10 @@ class PreflightReport:
     species_scientific_name: str = "Homo sapiens"
     species_common_name: str = "Human"
     human_ortholog_symbol: Optional[str] = None
+    nuclease_id: str = "spcas9"
+    nuclease_label: str = "SpCas9"
+    pam_label: str = "NGG"
+    spacer_length_nt: int = 20
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the complete report to a JSON-compatible dictionary."""

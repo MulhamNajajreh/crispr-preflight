@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from crispr_preflight.cache import CachedHttpClient
+from crispr_preflight.cache import CachedHttpClient, NetworkFetchError
 from crispr_preflight.clients.cellline_variants import CellLineAndVariantClient
 from crispr_preflight.clients.ensembl import (
     GRCH38_NC_MAP,
@@ -34,6 +34,7 @@ from crispr_preflight.models import (
     PreflightReport,
     ProteinDomain,
 )
+from crispr_preflight.nucleases import NucleaseConfig, resolve_nuclease
 from crispr_preflight.species import SpeciesConfig, resolve_species
 
 
@@ -62,8 +63,9 @@ class PreflightRunner:
         tissue: Optional[str] = None,
         cell_line: Optional[str] = None,
         species: Optional[str] = "human",
+        nuclease: Optional[str] = "spcas9",
     ) -> PreflightReport:
-        """Execute end-to-end biological flight check for a target gene in any supported organism."""
+        """Execute end-to-end biological flight check for a target gene in any supported organism & nuclease."""
         cleaned_query = gene_query.strip()
         if not cleaned_query:
             raise ValueError("Please provide a gene symbol, alias, or gene ID.")
@@ -71,8 +73,9 @@ class PreflightRunner:
             raise ValueError("Gene query is too long; provide a single gene symbol or ID.")
 
         species_cfg = resolve_species(species)
+        nuc_cfg = resolve_nuclease(nuclease)
         if species_cfg.species_id != "human":
-            return self._run_nonhuman(cleaned_query, species_cfg)
+            return self._run_nonhuman(cleaned_query, species_cfg, nuc_cfg)
 
         sources_used: list[str] = []
         used_ensembl_rest = False
@@ -337,6 +340,7 @@ class PreflightRunner:
             flanked_seqs=flanked_seqs,
             flank_pad=flank_pad,
             gene_symbol=gene_symbol,
+            nuclease_id=nuc_cfg.nuclease_id,
         )
         recommended_guides = select_top_gene_guides(exons, max_total=6)
 
@@ -351,6 +355,7 @@ class PreflightRunner:
                 gene_strand=strand,
                 gene_symbol=gene_symbol,
                 max_guides=5,
+                nuclease_id=nuc_cfg.nuclease_id,
             )
 
         if ccle_profile and ccle_profile.matched_ccle_sample:
@@ -405,6 +410,7 @@ class PreflightRunner:
             paralogs=paralog_risks,
             exons=exons,
             cell_line_genetics=ccle_profile,
+            nuclease_id=nuc_cfg.nuclease_id,
         )
 
         # 8. Orthogonal chemical tools & wet-lab validation plan
@@ -442,12 +448,17 @@ class PreflightRunner:
             species_id="human",
             species_scientific_name="Homo sapiens",
             species_common_name="Human",
+            nuclease_id=nuc_cfg.nuclease_id,
+            nuclease_label=nuc_cfg.short_tag,
+            pam_label=nuc_cfg.pam_pattern,
+            spacer_length_nt=nuc_cfg.spacer_length,
         )
 
     def _run_nonhuman(
         self,
         cleaned_query: str,
         species_cfg: SpeciesConfig,
+        nuc_cfg: NucleaseConfig,
     ) -> PreflightReport:
         """Fast (~1.6-2.4s cold) multi-species pipeline for Mouse, Rat, Zebrafish, Fly, and Worm."""
         sources_used: list[str] = [f"MyGene.info v3 ({species_cfg.scientific_name})"]
@@ -613,6 +624,10 @@ class PreflightRunner:
             flanked_seqs = fut_flanks.result() if fut_flanks is not None else None
             essentiality, chem_tools = fut_orth.result() if fut_orth is not None else (EssentialityProfile(), [])
 
+        if self.check_pams and fetch_intervals and (not flanked_seqs or not any(flanked_seqs.values())):
+            raise NetworkFetchError(
+                f"Could not fetch genomic sequence windows for {gene_symbol} ({species_cfg.assembly})."
+            )
         if flanked_seqs:
             sources_used.append(f"NCBI E-utilities ({species_cfg.assembly} RefSeq)")
         if essentiality.depmap_total_lines > 0 or chem_tools:
@@ -638,6 +653,7 @@ class PreflightRunner:
             flanked_seqs=flanked_seqs,
             flank_pad=flank_pad,
             gene_symbol=gene_symbol,
+            nuclease_id=nuc_cfg.nuclease_id,
         )
         recommended_guides = select_top_gene_guides(exons, max_total=6)
 
@@ -652,6 +668,7 @@ class PreflightRunner:
                 gene_strand=strand,
                 gene_symbol=gene_symbol,
                 max_guides=5,
+                nuclease_id=nuc_cfg.nuclease_id,
             )
 
         expr_profile = ExpressionProfile()
@@ -668,6 +685,7 @@ class PreflightRunner:
             cell_line_genetics=None,
             species_id=species_cfg.species_id,
             human_ortholog_symbol=human_orth_sym,
+            nuclease_id=nuc_cfg.nuclease_id,
         )
 
         validation = build_validation_plan(
@@ -705,4 +723,8 @@ class PreflightRunner:
             species_scientific_name=species_cfg.scientific_name,
             species_common_name=species_cfg.common_name,
             human_ortholog_symbol=human_orth_sym,
+            nuclease_id=nuc_cfg.nuclease_id,
+            nuclease_label=nuc_cfg.short_tag,
+            pam_label=nuc_cfg.pam_pattern,
+            spacer_length_nt=nuc_cfg.spacer_length,
         )

@@ -68,6 +68,7 @@ def evaluate_modality(
     cell_line_genetics: Optional[CellLineAlterationProfile] = None,
     species_id: str = "human",
     human_ortholog_symbol: Optional[str] = None,
+    nuclease_id: str = "spcas9",
 ) -> ModalityRecommendation:
     """Produce a transparent, rule-based experimental modality verdict and trap warning list."""
     warnings: list[TrapWarning] = []
@@ -392,14 +393,87 @@ def evaluate_modality(
         warnings.append(
             TrapWarning(
                 trap_id="SPECIES_WORM_NOTE",
-                title="C. elegans (WBcel235) Bench Note: Gonad Cas9 RNP Delivery & dpy-10 Co-CRISPR",
+                title="C. elegans (WBcel235) Bench Note: Gonad RNP Delivery & dpy-10 Co-CRISPR",
                 severity="INFO",
                 explanation=(
-                    "Germline syncytial gonad microinjection in C. elegans is typically performed with synthetic crRNA:tracrRNA Cas9 RNPs "
-                    "(using the bare 20-nt spacer) rather than mammalian U6 lentiviral vectors."
+                    "Germline syncytial gonad microinjection in C. elegans is typically performed with synthetic RNP complexes "
+                    "rather than mammalian U6 lentiviral vectors."
                 ),
                 bench_action=(
-                    "Pair your top 20-nt crRNA spacer with a dpy-10 or pha-1 co-CRISPR marker and genotype F1 rollers/dumpies using the paired PCR primers."
+                    "Pair your top crRNA spacer with a dpy-10 or pha-1 co-CRISPR marker and genotype F1 rollers/dumpies using the paired PCR primers."
+                ),
+            )
+        )
+
+    # --- 6. Nuclease-Specific Biochemical & Cloning Notes ---
+    if nuclease_id == "spcas9_hf":
+        warnings.append(
+            TrapWarning(
+                trap_id="NUCLEASE_HIFI_5G_RULE",
+                title="High-Fidelity Cas9 (eSpCas9 / SpCas9-HF1 / HiFi): Native 5'-G Rule",
+                severity="INFO",
+                explanation=(
+                    "Engineered eSpCas9(1.1) and SpCas9-HF1 lose 50–90% activity under standard U6 promoters when an unmatched "
+                    "5'-G is appended to a 20-nt spacer (21-nt gN20; Kim et al., Nat Commun 2017; Kulcsar et al., 2017)."
+                ),
+                bench_action=(
+                    "Pick native 5'-GN19 guides ranked first below for U6 plasmid cloning, or deliver non-G spacers as synthetic "
+                    "IDT Alt-R HiFi Cas9 RNPs (or via a tRNA/Hammerhead self-cleaving sgRNA cassette)."
+                ),
+            )
+        )
+    elif nuclease_id == "spg":
+        warnings.append(
+            TrapWarning(
+                trap_id="NUCLEASE_SPG_OFFTARGET",
+                title="PAM-Relaxed SpG Cas9 (3'-NGN): Expanded Off-Target Check Required",
+                severity="INFO",
+                explanation=(
+                    "SpG recognizes 3'-NGN PAMs (4x denser than canonical NGG; Walton et al., Science 2020), rescuing compact "
+                    "catalytic exons while increasing candidate genome-wide off-target loci."
+                ),
+                bench_action=(
+                    "Run Cas-OFFinder with PAM set to 'NGN' (0–2 mismatches) before ordering oligos, or pair with HiFi-SpG / RNP delivery."
+                ),
+            )
+        )
+    elif nuclease_id == "sacas9":
+        warnings.append(
+            TrapWarning(
+                trap_id="NUCLEASE_SACAS9_AAV",
+                title="Compact SaCas9 (21-nt + 3'-NNGRRT): Single-AAV Packaging & BsaI Cloning",
+                severity="INFO",
+                explanation=(
+                    "S. aureus Cas9 (~3.16 kb; Ran et al., Nature 2015) fits with its U6-sgRNA cassette inside a single all-in-one "
+                    "AAV vector (~4.7 kb limit, e.g. pX601 Addgene #61591) using 21-nt spacers and BsaI Golden Gate overhangs."
+                ),
+                bench_action=(
+                    "Digest pX601 with BsaI (not BsmBI/BbsI) when cloning the CACC/AAAC oligos below, and verify off-targets in Cas-OFFinder with PAM = 'NNGRRT'."
+                ),
+            )
+        )
+    elif nuclease_id == "cas12a":
+        ectotherm = species_id in ("zebrafish", "fly", "worm")
+        warnings.append(
+            TrapWarning(
+                trap_id="NUCLEASE_CAS12A_NOTE",
+                title=(
+                    "Cas12a / Cpf1 (5'-TTTV + 23-nt): Use LbCas12a-Ultra / enAsCas12a Below 30 °C"
+                    if ectotherm
+                    else "Cas12a / Cpf1 (5'-TTTV + 23-nt): Staggered 5-nt Overhangs & crRNA Multiplexing"
+                ),
+                severity="MODERATE" if ectotherm else "INFO",
+                explanation=(
+                    "Wild-type AsCas12a has sharply reduced cleavage activity below 28–30 °C in ectothermic embryos/animals "
+                    "(Moreno-Mateos et al., Nat Commun 2017), whereas LbCas12a (LbCas12a-Ultra) and enAsCas12a remain highly active."
+                    if ectotherm
+                    else "Cas12a recognizes a 5' T-rich PAM (5'-TTTV) upstream of the 23-nt protospacer, creates staggered 5-nt overhangs "
+                    "that favor frame-disrupting microdeletions, and processes multiplexed crRNA arrays from a single transcript."
+                ),
+                bench_action=(
+                    "Use LbCas12a-Ultra or enAsCas12a RNP (with 34 °C brief heat-shock in zebrafish if applicable); cloning oligos below use BsmBI crRNA direct-repeat overhangs (5'-AGAT / 5'-AAAA)."
+                    if ectotherm
+                    else "For U6 crRNA plasmids (pY010 / pY016 / pRDA_052), anneal the BsmBI 5'-AGAT / 5'-AAAA oligos below; for synthetic IDT Alt-R crRNA RNP, use the 21–23 nt protospacer."
                 ),
             )
         )

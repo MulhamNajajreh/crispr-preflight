@@ -207,6 +207,12 @@ def render_html(report: PreflightReport) -> str:
             f'{"".join(chips)}</div>'
         )
 
+    nuc_lbl = report.nuclease_label or "SpCas9"
+    pam_lbl = report.pam_label or "NGG"
+    sp_len = report.spacer_length_nt or 20
+    is_5p = report.nuclease_id == "cas12a"
+    fmt_lbl = f"5'-{pam_lbl} + {sp_len}-nt" if is_5p else f"{sp_len}-nt + {pam_lbl}"
+
     guides_section = ""
     if report.recommended_guides:
         g_rows = []
@@ -221,22 +227,26 @@ def render_html(report: PreflightReport) -> str:
                 )
             else:
                 primer_html = "—"
+            seq_html = (
+                f'<strong>{esc(g.pam)}</strong> <code>{esc(g.spacer_20nt)}</code>'
+                if g.pam_orientation == "5prime"
+                else f'<code>{esc(g.spacer_20nt)}</code> <strong>{esc(g.pam)}</strong>'
+            )
             g_rows.append(
                 f"<tr><td><strong>{esc(g.guide_id)}</strong></td>"
                 f"<td>Exon {g.exon_number} (aa {g.aa_cut}){dom_tag}</td>"
-                f'<td><code>{esc(g.spacer_20nt)}</code> <strong>{esc(g.pam)}</strong> <button class="copy-btn" data-copy="{esc(g.spacer_20nt)}" onclick="copyCoord(this)">Copy</button></td>'
+                f'<td>{seq_html} <button class="copy-btn" data-copy="{esc(g.spacer_20nt)}" onclick="copyCoord(this)">Copy</button></td>'
                 f"<td><code>{esc(g.chrom)}:{g.genomic_cut_pos}</code> ({esc(g.genomic_strand)} / {esc(g.transcript_orientation)})</td>"
                 f"<td>{g.gc_percent}% GC ({g.sequence_score}/100)</td>"
                 f"<td><code>5'-{esc(g.cloning_fwd_oligo)}-3'</code><br/><code>5'-{esc(g.cloning_rev_oligo)}-3'</code></td>"
                 f"<td>{primer_html}</td></tr>"
             )
         guides_section = (
-            "<h2>4. Candidate SpCas9 sgRNA Spacer Sequences (20-nt + NGG), U6 Oligos &amp; TIDE/ICE Primers</h2>"
+            f"<h2>4. Candidate {esc(nuc_lbl)} Guide Sequences ({esc(fmt_lbl)}), Golden Gate Oligos &amp; TIDE/ICE Primers</h2>"
             '<p style="font-size:13px;color:#1e3a8a;background:#eff6ff;border:1px solid #bfdbfe;padding:9px 12px;border-radius:7px;">'
-            "<strong>Off-target verification step:</strong> These 20-nt spacers are filtered for U6 Pol III compatibility (no <code>TTTT</code>), GC balance, Graf PAM-proximal efficiency, and BsmBI/BbsI cloning overhangs. "
-            "Verify zero 0–2 mismatch genomic off-targets in <a href=\"http://www.rgenome.net/cas-offinder/\" target=\"_blank\" rel=\"noopener\">Cas-OFFinder</a> or "
-            "<a href=\"https://portals.broadinstitute.org/gppx/crispick/public\" target=\"_blank\" rel=\"noopener\">Broad CRISPick</a> before ordering oligos.</p>"
-            f"<table><thead><tr><th>Guide ID</th><th>Exon &amp; AA</th><th>20-nt Spacer + PAM</th><th>Cut Pos ({esc(report.assembly)})</th><th>GC% &amp; Score</th><th>U6 Golden Gate Oligos</th><th>TIDE / Synthego ICE PCR Primers</th></tr></thead>"
+            f"<strong>Off-target verification step:</strong> These {sp_len}-nt spacers are filtered for U6 Pol III compatibility (no <code>TTTT</code>), GC balance, PAM/seed efficiency, and cloning overhangs. "
+            f"Verify zero 0–2 mismatch genomic off-targets (PAM = <code>{esc(pam_lbl)}</code>) in <a href=\"http://www.rgenome.net/cas-offinder/\" target=\"_blank\" rel=\"noopener\">Cas-OFFinder</a> before ordering oligos.</p>"
+            f"<table><thead><tr><th>Guide ID</th><th>Exon &amp; AA</th><th>Target ({esc(fmt_lbl)})</th><th>Cut Pos ({esc(report.assembly)})</th><th>GC% &amp; Score</th><th>Golden Gate Oligos</th><th>TIDE / Synthego ICE PCR Primers</th></tr></thead>"
             f"<tbody>{''.join(g_rows)}</tbody></table>"
         )
 
@@ -245,18 +255,23 @@ def render_html(report: PreflightReport) -> str:
         ci_rows = []
         for g in report.crispri_guides:
             off_s = f"{g.tss_offset_bp:+d} bp" if g.tss_offset_bp is not None else "—"
+            seq_html = (
+                f'<strong>{esc(g.pam)}</strong> <code>{esc(g.spacer_20nt)}</code>'
+                if g.pam_orientation == "5prime"
+                else f'<code>{esc(g.spacer_20nt)}</code> <strong>{esc(g.pam)}</strong>'
+            )
             ci_rows.append(
                 f"<tr><td><strong>{esc(g.guide_id)}</strong></td>"
                 f"<td><code>{esc(off_s)}</code> from TSS</td>"
-                f'<td><code>{esc(g.spacer_20nt)}</code> <strong>{esc(g.pam)}</strong> <button class="copy-btn" data-copy="{esc(g.spacer_20nt)}" onclick="copyCoord(this)">Copy</button></td>'
+                f'<td>{seq_html} <button class="copy-btn" data-copy="{esc(g.spacer_20nt)}" onclick="copyCoord(this)">Copy</button></td>'
                 f"<td><code>{esc(g.chrom)}:{g.genomic_cut_pos}</code> ({esc(g.genomic_strand)})</td>"
                 f"<td>{g.gc_percent}% GC ({g.sequence_score}/100)</td>"
                 f"<td><code>5'-{esc(g.cloning_fwd_oligo)}-3'</code><br/><code>5'-{esc(g.cloning_rev_oligo)}-3'</code></td></tr>"
             )
         tss_lbl = f" ({esc(report.assembly)} <code>{esc(report.chrom)}:{report.tss_genomic_pos}</code>)" if report.tss_genomic_pos else ""
         crispri_section = (
-            f"<h2>4b. Promoter CRISPRi (dCas9-KRAB) Candidate Guides (TSS -50 to +300 bp){tss_lbl}</h2>"
-            f"<table><thead><tr><th>Guide ID</th><th>TSS Offset</th><th>20-nt Spacer + PAM</th><th>Target Pos ({esc(report.assembly)})</th><th>GC% &amp; Score</th><th>U6 Golden Gate Oligos</th></tr></thead>"
+            f"<h2>4b. Promoter CRISPRi ({esc(nuc_lbl)} dCas-KRAB) Candidate Guides (TSS -50 to +300 bp){tss_lbl}</h2>"
+            f"<table><thead><tr><th>Guide ID</th><th>TSS Offset</th><th>Target ({esc(fmt_lbl)})</th><th>Target Pos ({esc(report.assembly)})</th><th>GC% &amp; Score</th><th>Golden Gate Oligos</th></tr></thead>"
             f"<tbody>{''.join(ci_rows)}</tbody></table>"
         )
 
@@ -377,7 +392,7 @@ def render_html(report: PreflightReport) -> str:
   <h2>3. Exon-by-Exon Targetability &amp; Transparent Score Math</h2>
   <table>
     <thead>
-      <tr><th>Exon</th><th>Score</th><th>Tier</th><th>AA Span</th><th>Length</th><th>Isoforms</th><th>NGG Sites</th><th>NMD Zone</th><th>Domain Overlap</th><th>CRISPick Coordinate</th></tr>
+      <tr><th>Exon</th><th>Score</th><th>Tier</th><th>AA Span</th><th>Length</th><th>Isoforms</th><th>{esc(pam_lbl)} Sites</th><th>NMD Zone</th><th>Domain Overlap</th><th>Target Region ({esc(report.assembly)})</th></tr>
     </thead>
     <tbody>
       {''.join(exon_rows)}

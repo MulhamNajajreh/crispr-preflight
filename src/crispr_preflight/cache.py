@@ -18,6 +18,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Optional
 
@@ -92,7 +93,7 @@ class CachedHttpClient:
         ):
             try:
                 candidate.parent.mkdir(parents=True, exist_ok=True)
-                with sqlite3.connect(candidate) as conn:
+                with closing(sqlite3.connect(candidate)) as conn:
                     conn.execute(create_sql)
                     conn.commit()
                 self.cache_path = candidate
@@ -120,7 +121,7 @@ class CachedHttpClient:
                 return body
         if not self.cache_path.exists():
             return None
-        with self._db_lock, sqlite3.connect(self.cache_path) as conn:
+        with self._db_lock, closing(sqlite3.connect(self.cache_path)) as conn:
             row = conn.execute(
                 "SELECT body, fetched_at FROM responses WHERE cache_key = ?",
                 (key,),
@@ -142,7 +143,7 @@ class CachedHttpClient:
         if len(self._mem_cache) >= 1024:
             self._mem_cache.clear()
         self._mem_cache[key] = (body, now)
-        with self._db_lock, sqlite3.connect(self.cache_path) as conn:
+        with self._db_lock, closing(sqlite3.connect(self.cache_path)) as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO responses (cache_key, url, status_code, body, fetched_at)
@@ -157,7 +158,7 @@ class CachedHttpClient:
         self._mem_cache.clear()
         if not self.cache_path.exists():
             return 0
-        with self._db_lock, sqlite3.connect(self.cache_path) as conn:
+        with self._db_lock, closing(sqlite3.connect(self.cache_path)) as conn:
             cur = conn.execute("DELETE FROM responses")
             conn.commit()
             return cur.rowcount or 0
@@ -166,7 +167,7 @@ class CachedHttpClient:
         """Return cache file path and entry count."""
         if not self.cache_path.exists():
             return {"path": str(self.cache_path), "entries": 0, "exists": False}
-        with self._db_lock, sqlite3.connect(self.cache_path) as conn:
+        with self._db_lock, closing(sqlite3.connect(self.cache_path)) as conn:
             count = conn.execute("SELECT COUNT(*) FROM responses").fetchone()[0]
         return {"path": str(self.cache_path), "entries": int(count), "exists": True}
 

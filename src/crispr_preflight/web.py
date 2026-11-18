@@ -6,11 +6,14 @@ Hugging Face Spaces out of the box), serving an interactive web UI and JSON API.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import socket
 import threading
 import time
 import urllib.parse
+from collections import deque
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional
@@ -98,18 +101,25 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
   }
   .search-grid {
     display: grid;
-    grid-template-columns: 1.08fr 1.22fr 0.95fr 1.05fr auto;
-    gap: 12px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px 14px;
     align-items: end;
   }
-  .batch-grid {
+  .batch-opts-grid {
     display: grid;
-    grid-template-columns: 1.05fr 1.45fr 0.9fr 1fr auto;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
     align-items: end;
   }
-  @media (max-width: 980px) {
-    .search-grid, .batch-grid { grid-template-columns: 1fr; }
+  .batch-genes-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    align-items: end;
+    margin-top: 12px;
+  }
+  @media (max-width: 900px) {
+    .search-grid, .batch-opts-grid, .batch-genes-row { grid-template-columns: 1fr; }
   }
   label {
     display: block;
@@ -402,6 +412,16 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
               </select>
             </div>
             <div>
+              <label for="nuclease-input">CRISPR Nuclease / PAM</label>
+              <select id="nuclease-input" class="nice-select" onchange="onNucleaseChange('single')">
+                <option value="spcas9" selected>SpCas9 — 20-nt + 3'-NGG (Standard)</option>
+                <option value="spcas9_hf">HiFi / eSpCas9 / HF1 — 20-nt + NGG (Native 5'-G)</option>
+                <option value="spg">SpG Cas9 — 20-nt + 3'-NGN (PAM-Relaxed)</option>
+                <option value="sacas9">SaCas9 — 21-nt + 3'-NNGRRT (Single-AAV)</option>
+                <option value="cas12a">Cas12a / Cpf1 — 5'-TTTV + 23-nt (AT-Rich / Multiplex)</option>
+              </select>
+            </div>
+            <div>
               <label for="gene-input" id="gene-input-lbl">Gene Symbol, Alias, or ID</label>
               <input id="gene-input" type="text" placeholder="Type a gene (e.g. STAT3, TP53, BRD4, KRAS...)" value="" autofocus required />
             </div>
@@ -443,7 +463,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
               </div>
             </div>
             <div>
-              <button id="run-btn" type="submit" class="btn-primary">Run Flight Check</button>
+              <button id="run-btn" type="submit" class="btn-primary" style="width:100%;">Run Flight Check</button>
             </div>
           </div>
         </form>
@@ -465,7 +485,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
           <button type="button" class="btn-secondary" id="demo-batch-btn" onclick="loadDemoBatch()">Load Demo Screen Hits</button>
         </div>
 
-        <div class="batch-grid">
+        <div class="batch-opts-grid">
           <div>
             <label for="batch-species">Organism / Genome</label>
             <select id="batch-species" class="nice-select" onchange="onSpeciesChange('batch')">
@@ -478,8 +498,14 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
             </select>
           </div>
           <div>
-            <label for="batch-genes">Gene Symbols (comma, space, or newline separated — up to 30)</label>
-            <textarea id="batch-genes" rows="2" placeholder="Paste gene list here (e.g. BRD4, SMARCA4, PLK1, SOX2, STAT3, KRAS)..."></textarea>
+            <label for="batch-nuclease">CRISPR Nuclease / PAM</label>
+            <select id="batch-nuclease" class="nice-select">
+              <option value="spcas9" selected>SpCas9 — 20-nt + 3'-NGG (Standard)</option>
+              <option value="spcas9_hf">HiFi / eSpCas9 / HF1 — 20-nt + NGG (Native 5'-G)</option>
+              <option value="spg">SpG Cas9 — 20-nt + 3'-NGN (PAM-Relaxed)</option>
+              <option value="sacas9">SaCas9 — 21-nt + 3'-NNGRRT (Single-AAV)</option>
+              <option value="cas12a">Cas12a / Cpf1 — 5'-TTTV + 23-nt (AT-Rich / Multiplex)</option>
+            </select>
           </div>
           <div>
             <label for="batch-tissue">Target Tissue (Optional)</label>
@@ -517,6 +543,12 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
               </div>
               <div id="batch-cell-menu" class="combo-menu"></div>
             </div>
+          </div>
+        </div>
+        <div class="batch-genes-row">
+          <div>
+            <label for="batch-genes">Gene Symbols (comma, space, or newline separated — up to 30)</label>
+            <textarea id="batch-genes" rows="2" placeholder="Paste gene list here (e.g. BRD4, SMARCA4, PLK1, SOX2, STAT3, KRAS)..."></textarea>
           </div>
           <div>
             <button type="button" id="batch-run-btn" class="btn-primary" onclick="runBatchTriage()">Triage Gene List</button>
@@ -625,7 +657,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
           <table>
             <thead>
               <tr>
-                <th>Exon</th><th>Score</th><th>Tier</th><th>AA Span</th><th>Length</th><th>Isoforms</th><th>NGG Sites</th><th>NMD Status</th><th id="exon-coord-th">Target Region (GRCh38)</th>
+                <th>Exon</th><th>Score</th><th>Tier</th><th>AA Span</th><th>Length</th><th>Isoforms</th><th id="exon-pam-th">NGG Sites</th><th>NMD Status</th><th id="exon-coord-th">Target Region (GRCh38)</th>
               </tr>
             </thead>
             <tbody id="exon-tbody"></tbody>
@@ -637,7 +669,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
       <div class="card">
         <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;">
           <div>
-            <h2 style="margin:0;">4. SpCas9 sgRNA Spacers, Strain/SNP Shield &amp; TIDE/ICE Genotyping Primers</h2>
+            <h2 style="margin:0;" id="guides-hdr">4. SpCas9 sgRNA Spacers, Strain/SNP Shield &amp; TIDE/ICE Genotyping Primers</h2>
             <div style="font-size:12px;color:var(--muted);" id="guides-sub">Includes U6 Golden Gate oligos (<code>BsmBI</code>/<code>BbsI</code>), paired 430–740 bp TIDE/ICE PCR primers, and background gnomAD common SNP screening (MAF &ge;1%).</div>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -877,6 +909,26 @@ const CELL_CATALOG_BY_SPECIES = {
     { group: 'C. elegans In Vivo Models', name: 'N2 Bristol Gonad (RNP)', sub: 'Syncytial Gonad Cas9 RNP + dpy-10' }
   ]
 };
+
+const NUCLEASE_META = {
+  spcas9: { tag: 'SpCas9', pam: 'NGG', spacerLen: 20, pamOrient: '3prime', oligoHdr: 'U6 Golden Gate Oligos' },
+  spcas9_hf: { tag: 'SpCas9-HF', pam: 'NGG', spacerLen: 20, pamOrient: '3prime', oligoHdr: 'U6 Oligos (Native 5\'-G Priority)' },
+  spg: { tag: 'SpG', pam: 'NGN', spacerLen: 20, pamOrient: '3prime', oligoHdr: 'U6 Golden Gate Oligos (SpG)' },
+  sacas9: { tag: 'SaCas9', pam: 'NNGRRT', spacerLen: 21, pamOrient: '3prime', oligoHdr: 'U6 BsaI Oligos (AAV pX601)' },
+  cas12a: { tag: 'Cas12a', pam: 'TTTV', spacerLen: 23, pamOrient: '5prime', oligoHdr: 'U6 crRNA Oligos (BsmBI)' }
+};
+
+function getScopeNuclease(scope) {
+  const el = document.getElementById(scope === 'batch' ? 'batch-nuclease' : 'nuclease-input');
+  const val = (el && el.value ? el.value.trim().toLowerCase() : 'spcas9');
+  return NUCLEASE_META[val] ? val : 'spcas9';
+}
+
+function onNucleaseChange(scope) {
+  if (scope === 'single' && APP_MODE === 'SINGLE' && document.getElementById('gene-input').value.trim()) {
+    runCheck(null, true);
+  }
+}
 
 function getScopeSpecies(scope) {
   const el = document.getElementById(scope === 'batch' ? 'batch-species' : 'species-input');
@@ -1134,10 +1186,11 @@ function fallbackCopyText(txt, btn, msg) {
   flashCopied(btn, msg);
 }
 
-function syncUrlPermalink(gene, tissue, cell, species) {
+function syncUrlPermalink(gene, tissue, cell, species, nuclease) {
   try {
     const params = new URLSearchParams();
     if (species && species !== 'human') params.set('species', species);
+    if (nuclease && nuclease !== 'spcas9') params.set('nuclease', nuclease);
     if (gene) params.set('gene', gene);
     if (tissue) params.set('tissue', tissue);
     if (cell) params.set('cell_line', cell);
@@ -1217,8 +1270,9 @@ function buildIdtRowsFromItems(items) {
   const seenPrimers = new Set();
   items.forEach(({ guide }) => {
     if (guide.cloning_fwd_oligo && guide.cloning_rev_oligo) {
-      rows.push([`${guide.guide_id}_U6_Fwd`, guide.cloning_fwd_oligo, '25nm', 'STD'].map(csvCell).join(','));
-      rows.push([`${guide.guide_id}_U6_Rev`, guide.cloning_rev_oligo, '25nm', 'STD'].map(csvCell).join(','));
+      const nucTag = (guide.nuclease || 'U6').replace(/[^A-Za-z0-9]/g, '');
+      rows.push([`${guide.guide_id}_${nucTag}_Fwd`, guide.cloning_fwd_oligo, '25nm', 'STD'].map(csvCell).join(','));
+      rows.push([`${guide.guide_id}_${nucTag}_Rev`, guide.cloning_rev_oligo, '25nm', 'STD'].map(csvCell).join(','));
     }
     const pr = guide.genotyping_primers;
     if (pr && pr.fwd_seq && pr.rev_seq) {
@@ -1259,6 +1313,7 @@ async function inspectParalogByIndex(idx) {
   const p = (CURRENT.report.paralogs || [])[idx];
   if (!p) return;
   const curSpecies = CURRENT.report.species_id || 'human';
+  const curNuclease = CURRENT.report.nuclease_id || 'spcas9';
   if (APP_MODE === 'BATCH') {
     const existingIdx = BATCH_ROWS.findIndex(r => r.gene.toUpperCase() === p.gene_symbol.toUpperCase());
     if (existingIdx >= 0 && BATCH_ROWS[existingIdx].payload) {
@@ -1271,7 +1326,7 @@ async function inspectParalogByIndex(idx) {
     BATCH_ROWS.push({ gene: p.gene_symbol, payload: null, error: null, pending: true });
     renderBatchTable();
     try {
-      const params = new URLSearchParams({ _route: 'check', species: curSpecies, gene: p.gene_symbol });
+      const params = new URLSearchParams({ _route: 'check', species: curSpecies, nuclease: curNuclease, gene: p.gene_symbol });
       if (tissue) params.set('tissue', tissue);
       if (cell) params.set('cell_line', cell);
       const resp = await fetch(`/api/check?${params.toString()}`, { cache: 'no-store' });
@@ -1294,22 +1349,26 @@ async function inspectParalogByIndex(idx) {
   }
   const tissue = document.getElementById('tissue-input').value.trim();
   const cell = document.getElementById('cell-input').value.trim();
-  quickRun(p.gene_symbol, tissue, cell, curSpecies);
+  quickRun(p.gene_symbol, tissue, cell, curSpecies, curNuclease);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function quickRun(gene, tissue, cell, species) {
+function quickRun(gene, tissue, cell, species, nuclease) {
   switchAppMode('SINGLE');
   if (species && SPECIES_META[species]) {
     document.getElementById('species-input').value = species;
     onSpeciesChange('single', false);
   }
+  if (nuclease && NUCLEASE_META[nuclease]) {
+    document.getElementById('nuclease-input').value = nuclease;
+  }
   const sp = getScopeSpecies('single');
+  const nuc = getScopeNuclease('single');
   document.getElementById('gene-input').value = gene;
   document.getElementById('tissue-input').value = sp === 'human' ? (tissue || '') : '';
   setCellValue('single', cell || '');
   closeAllCellMenus();
-  syncUrlPermalink(gene, sp === 'human' ? (tissue || '') : '', cell || '', sp);
+  syncUrlPermalink(gene, sp === 'human' ? (tissue || '') : '', cell || '', sp, nuc);
   runCheck(null, false);
 }
 
@@ -1317,14 +1376,16 @@ async function runCheck(ev, updateUrl = true) {
   if (ev) ev.preventDefault();
   closeAllCellMenus();
   const sp = getScopeSpecies('single');
+  const nuc = getScopeNuclease('single');
   const meta = SPECIES_META[sp];
+  const nucMeta = NUCLEASE_META[nuc];
   const gene = document.getElementById('gene-input').value.trim();
   const tissue = sp === 'human' ? document.getElementById('tissue-input').value.trim() : '';
   const cell = document.getElementById('cell-input').value.trim();
   if (!gene) return;
 
   if (updateUrl) {
-    syncUrlPermalink(gene, tissue, cell, sp);
+    syncUrlPermalink(gene, tissue, cell, sp, nuc);
   }
   const reqId = ++ACTIVE_REQ_ID;
   const btn = document.getElementById('run-btn');
@@ -1337,15 +1398,15 @@ async function runCheck(ev, updateUrl = true) {
   const renderLoadingMsg = () => {
     const secs = ((performance.now() - tStart) / 1000).toFixed(1);
     const dbDetail = sp === 'human'
-      ? 'Querying GRCh38 isoforms, Pfam domains, DepMap, CCLE, gnomAD, GTEx &amp; HPA in parallel.'
-      : `Querying ${esc(meta.assembly)} RefSeq/Ensembl exons, Pfam domains, Alliance DIOPT paralogs &amp; conserved human ortholog metrics in parallel.`;
+      ? `Scanning ${esc(nucMeta.tag)} (${esc(nucMeta.pam)}) across GRCh38 isoforms, Pfam domains, DepMap, CCLE, gnomAD, GTEx &amp; HPA.`
+      : `Scanning ${esc(nucMeta.tag)} (${esc(nucMeta.pam)}) across ${esc(meta.assembly)} RefSeq exons, Pfam domains &amp; Alliance DIOPT paralogs.`;
     sbox.innerHTML = `<strong>Running ${esc(meta.label)} flight check on ${esc(gene)} (${secs}s)...</strong> ${dbDetail}`;
   };
   renderLoadingMsg();
   const timerHandle = setInterval(renderLoadingMsg, 150);
 
   try {
-    const params = new URLSearchParams({ _route: 'check', species: sp, gene });
+    const params = new URLSearchParams({ _route: 'check', species: sp, nuclease: nuc, gene });
     if (tissue) params.set('tissue', tissue);
     if (cell) params.set('cell_line', cell);
     const resp = await fetch(`/api/check?${params.toString()}`, { cache: 'no-store' });
@@ -1404,15 +1465,19 @@ async function triggerAsyncSnpCheck() {
   const specs = [];
   const seenIds = new Set();
   allGuides.forEach(g => {
-    if (!g.guide_id || seenIds.has(g.guide_id) || SNP_CACHE[g.guide_id]) return;
+    const cacheKey = `${r.nuclease_id || 'spcas9'}:${g.guide_id}`;
+    if (!g.guide_id || seenIds.has(cacheKey) || SNP_CACHE[cacheKey]) return;
     if (g.genomic_start_23bp && g.genomic_end_23bp) {
-      seenIds.add(g.guide_id);
+      seenIds.add(cacheKey);
       specs.push({
-        guide_id: g.guide_id,
+        guide_id: cacheKey,
         chrom: g.chrom,
         start: g.genomic_start_23bp,
         end: g.genomic_end_23bp,
-        strand: g.genomic_strand
+        strand: g.genomic_strand,
+        pam_orientation: g.pam_orientation || '3prime',
+        pam_len: (g.pam || 'NGG').length,
+        spacer_len: g.spacer_length || 20
       });
     }
   });
@@ -1500,7 +1565,7 @@ function copyGuidesFasta(btn) {
     const loc = g.mode === 'CRISPRi'
       ? `TSS${g.tss_offset_bp >= 0 ? '+' : ''}${g.tss_offset_bp}bp`
       : `Exon${g.exon_number}_aa${g.aa_cut}`;
-    return `>${g.guide_id} | ${loc} ${g.chrom}:${g.genomic_cut_pos} (${g.genomic_strand}) PAM=${g.pam}\r\n${g.spacer_20nt}`;
+    return `>${g.guide_id} | ${g.nuclease || 'SpCas9'} ${loc} ${g.chrom}:${g.genomic_cut_pos} (${g.genomic_strand}) PAM=${g.pam}\r\n${g.spacer_20nt}`;
   }).join('\r\n');
   copyText(fasta, btn);
 }
@@ -1614,12 +1679,14 @@ function renderSvgAndInspector() {
 
   const ex = coding.find(e => e.exon_number === SELECTED_EXON) || coding[0];
   if (ex) {
+    const nucLbl = r.nuclease_label || 'SpCas9';
+    const pamLbl = r.pam_label || 'NGG';
     document.getElementById('exon-inspector').innerHTML = `
       <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;">
         <div>
           <strong>Selected: Exon ${ex.exon_number}</strong>
           <span class="pill pill-${ex.tier}" style="margin-left:8px;">${ex.priority_score}/100 &bull; ${ex.tier}</span>
-          <span style="font-size:12px;color:var(--muted);margin-left:8px;">aa ${ex.aa_start}–${ex.aa_end} &bull; ${ex.exon_length_bp} bp (${ex.is_symmetric ? 'divisible by 3 — symmetric' : 'asymmetric'}) &bull; ${ex.spcas9_pam_count ?? '—'} SpCas9 NGG cut sites</span>
+          <span style="font-size:12px;color:var(--muted);margin-left:8px;">aa ${ex.aa_start}–${ex.aa_end} &bull; ${ex.exon_length_bp} bp (${ex.is_symmetric ? 'divisible by 3 — symmetric' : 'asymmetric'}) &bull; ${ex.spcas9_pam_count ?? '—'} ${esc(nucLbl)} (${esc(pamLbl)}) cut sites</span>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           <code>${esc(ex.crispick_target_region)}</code>
@@ -1637,12 +1704,13 @@ function renderSnpBadge(guideId) {
   if (CURRENT && (CURRENT.report.species_id || 'human') !== 'human') {
     return '<span class="pill pill-INFO" title="Sequence your wild-type lab strain or stock across the target exon with the paired PCR primers">Seq WT Strain</span>';
   }
-  const info = SNP_CACHE[guideId];
+  const cacheKey = `${(CURRENT && CURRENT.report.nuclease_id) || 'spcas9'}:${guideId}`;
+  const info = SNP_CACHE[cacheKey] || SNP_CACHE[guideId];
   if (!info) {
     return '<span class="pill pill-INFO" style="font-weight:600;">Checking gnomAD...</span>';
   }
   if (info.status === 'CLEAN') {
-    return '<span class="pill pill-RECOMMENDED" title="Zero common human variants (MAF >= 1%) in 20-nt spacer + PAM">&#10003; Clean (&lt;1% MAF)</span>';
+    return '<span class="pill pill-RECOMMENDED" title="Zero common human variants (MAF >= 1%) in spacer + PAM">&#10003; Clean (&lt;1% MAF)</span>';
   }
   if (info.status === 'HIGH') {
     return `<span class="pill pill-AVOID" title="${esc(info.summary)}">&#9888; ${esc(info.summary)}</span>`;
@@ -1655,21 +1723,33 @@ function renderSnpBadge(guideId) {
 
 function renderGuidesTable() {
   updateGuideScopeButtons();
+  const r = CURRENT.report;
+  const nucId = r.nuclease_id || 'spcas9';
+  const nucMeta = NUCLEASE_META[nucId] || NUCLEASE_META.spcas9;
+  const nucLbl = r.nuclease_label || nucMeta.tag;
+  const pamLbl = r.pam_label || nucMeta.pam;
+  const spLen = r.spacer_length_nt || nucMeta.spacerLen;
+  const is5p = nucMeta.pamOrient === '5prime';
+  const targetHdr = is5p
+    ? `5&prime;-PAM (${esc(pamLbl)}) + ${spLen}-nt Spacer`
+    : `${spLen}-nt Spacer (5&prime;&rarr;3&prime;) + PAM (${esc(pamLbl)})`;
+
   const guides = getDisplayedGuides();
   const wrap = document.getElementById('guides-wrap');
   const isCrispri = GUIDE_SCOPE === 'CRISPRI';
 
   if (!guides.length) {
+    const altNucHint = nucId !== 'spg' ? ' (try switching Nuclease above to <strong>SpG [NGN]</strong> or <strong>Cas12a [TTTV]</strong>, or select another exon)' : '';
     const emptyMsg = isCrispri
-      ? 'No canonical promoter SpCas9 guides designed in TSS [-50, +300 bp] for this locus.'
-      : 'No clean non-<code>TTTT</code> canonical SpCas9 <code>NGG</code> spacers found in this scope (consider an SpG/SpRY PAM-relaxed Cas9 variant or select another exon).';
+      ? `No clean promoter ${esc(nucLbl)} (<code>${esc(pamLbl)}</code>) guides found in TSS [-50, +300 bp] for this locus${altNucHint}.`
+      : `No clean non-<code>TTTT</code> ${esc(nucLbl)} (<code>${esc(pamLbl)}</code>) spacers found in this scope${altNucHint}.`;
     wrap.innerHTML = `<div style="font-size:13px;color:var(--muted);padding:8px 0;">${emptyMsg}</div>`;
     return;
   }
 
-  const tssBanner = (isCrispri && CURRENT.report.tss_genomic_pos)
+  const tssBanner = (isCrispri && r.tss_genomic_pos)
     ? `<div style="background:#f0fdfa;border:1px solid #99f6e4;color:#0f766e;border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:10px;">
-         <strong>dCas9-KRAB Promoter Window:</strong> Guides designed around primary RefSeq 5&prime; TSS at <code>${esc(CURRENT.report.chrom)}:${CURRENT.report.tss_genomic_pos}</code> (Horlbeck/Weissman optimal window: <code>-50</code> to <code>+300 bp</code>; peak <code>+25..+150 bp</code>). No DSBs — avoids multi-copy amplification &amp; pan-essential clonal escaper artifacts.
+         <strong>d${esc(nucLbl)}-KRAB Promoter Window:</strong> Guides designed around primary RefSeq 5&prime; TSS at <code>${esc(r.chrom)}:${r.tss_genomic_pos}</code> (Horlbeck/Weissman window: <code>-50</code> to <code>+300 bp</code>; peak <code>+25..+150 bp</code>). No DSBs — avoids multi-copy amplification &amp; pan-essential clonal escaper artifacts.
        </div>`
     : '';
 
@@ -1679,10 +1759,10 @@ function renderGuidesTable() {
         <tr>
           <th>Guide ID</th>
           <th>${isCrispri ? 'TSS Offset' : 'Exon &amp; AA'}</th>
-          <th>20-nt Spacer (5&prime;&rarr;3&prime;) + PAM</th>
-          <th>Common SNP Shield</th>
+          <th>${targetHdr}</th>
+          <th>Strain / SNP Shield</th>
           <th>GC% &amp; Quality</th>
-          <th>U6 Golden Gate Oligos</th>
+          <th>${esc(nucMeta.oligoHdr)}</th>
           <th>${isCrispri ? 'Order Basket' : 'TIDE / ICE PCR Primers &amp; Basket'}</th>
         </tr>
       </thead>
@@ -1695,6 +1775,10 @@ function renderGuidesTable() {
           const notesTxt = (g.quality_notes || []).slice(0, 2).join(' • ');
           const isPinned = ORDER_BASKET.some(b => b.guide.guide_id === g.guide_id && b.guide.spacer_20nt === g.spacer_20nt);
           const pinBtn = `<button type="button" class="btn-secondary" onclick="pinGuideToBasket(${idx}, this)">${isPinned ? '&#10003; Pinned' : '+ Pin Guide'}</button>`;
+          const gLen = g.spacer_length || spLen;
+          const seqBadges = (g.pam_orientation === '5prime')
+            ? `<span class="pam-badge">${esc(g.pam)}</span> <code style="font-size:13px;font-weight:700;color:#0f172a;">${esc(g.spacer_20nt)}</code>`
+            : `<code style="font-size:13px;font-weight:700;color:#0f172a;">${esc(g.spacer_20nt)}</code> <span class="pam-badge">${esc(g.pam)}</span>`;
 
           let primerCell = pinBtn;
           if (!isCrispri && g.genotyping_primers) {
@@ -1715,9 +1799,8 @@ function renderGuidesTable() {
             <td><strong>${esc(g.guide_id)}</strong></td>
             <td style="white-space:nowrap;">${locCell}</td>
             <td style="white-space:nowrap;">
-              <code style="font-size:13px;font-weight:700;color:#0f172a;">${esc(g.spacer_20nt)}</code>
-              <span class="pam-badge">${esc(g.pam)}</span>
-              <div style="margin-top:4px;"><button type="button" class="btn-secondary" onclick="copyGuideSpacer(${idx}, this)">Copy 20-nt</button></div>
+              ${seqBadges}
+              <div style="margin-top:4px;"><button type="button" class="btn-secondary" onclick="copyGuideSpacer(${idx}, this)">Copy ${gLen}-nt</button></div>
             </td>
             <td>${renderSnpBadge(g.guide_id)}</td>
             <td><strong>${g.gc_percent}% GC</strong> &bull; ${g.sequence_score}/100<div style="font-size:11.5px;color:var(--muted);">${esc(notesTxt)}</div></td>
@@ -1756,10 +1839,15 @@ function renderReport() {
   const isHuman = (r.species_id || 'human') === 'human';
   const spCommon = r.species_common_name || 'Human';
   const spSci = r.species_scientific_name || 'Homo sapiens';
+  const nucId = r.nuclease_id || 'spcas9';
+  const nucLbl = r.nuclease_label || 'SpCas9';
+  const pamLbl = r.pam_label || 'NGG';
+  const spLen = r.spacer_length_nt || 20;
+  const pamFmt = nucId === 'cas12a' ? `5'-${pamLbl} + ${spLen}-nt` : `${spLen}-nt + 3'-${pamLbl}`;
   const orthNote = (!isHuman && r.human_ortholog_symbol) ? ` • 1:1 Human Ortholog: ${r.human_ortholog_symbol}` : '';
 
   document.getElementById('res-title').innerHTML = `${esc(r.gene_symbol)} <span style="font-weight:400;color:var(--muted);font-size:16px;">(${esc(r.ensembl_id)})</span>`;
-  document.getElementById('res-sub').textContent = `${spSci} (${spCommon})${orthNote} • ${r.gene_description} • ${r.assembly} ${r.chrom} (${r.strand >= 0 ? '+' : '-'} strand) • Primary transcript: ${tx.transcript_id} (${tx.protein_length_aa} aa)`;
+  document.getElementById('res-sub').textContent = `${spSci} (${spCommon})${orthNote} • Nuclease: ${nucLbl} (${pamFmt}) • ${r.assembly} ${r.chrom} (${r.strand >= 0 ? '+' : '-'} strand) • Primary transcript: ${tx.transcript_id} (${tx.protein_length_aa} aa)`;
   updateBasketUi();
 
   document.getElementById('lbl-kpi-1').textContent = isHuman
@@ -1771,20 +1859,25 @@ function renderReport() {
   document.getElementById('lbl-kpi-3').textContent = isHuman
     ? 'GTEx Baseline Expression'
     : 'Ortholog Baseline Expression';
+  document.getElementById('exon-pam-th').textContent = `${pamLbl} Sites`;
   document.getElementById('exon-coord-th').textContent = `Target Region (${r.assembly})`;
   document.getElementById('paralog-hdr').textContent = `5. ${spCommon} Paralog Buffering Check`;
+  document.getElementById('guides-hdr').textContent = `4. ${nucLbl} Spacers (${pamFmt}), Strain/SNP Shield & TIDE/ICE Primers`;
 
   const guidesSub = document.getElementById('guides-sub');
+  const backboneTxt = nucId === 'sacas9'
+    ? '<code>BsaI</code> AAV <code>pX601</code> oligos'
+    : (nucId === 'cas12a' ? '<code>BsmBI</code> crRNA direct-repeat oligos (<code>5&prime;-AGAT</code> / <code>5&prime;-AAAA</code>)' : 'U6 Golden Gate oligos (<code>BsmBI</code>/<code>BbsI</code>)');
   if (isHuman) {
-    guidesSub.innerHTML = 'Includes U6 Golden Gate oligos (<code>BsmBI</code>/<code>BbsI</code>), paired 430–740 bp TIDE/ICE PCR primers, and background gnomAD common SNP screening (MAF &ge;1%).';
-  } else if (r.species_id === 'fly') {
-    guidesSub.innerHTML = 'Includes U6 Golden Gate oligos (note: swap <code>5&prime;-CACC</code> &rarr; <code>5&prime;-GTCG</code> if cloning into Drosophila <code>pCFD3</code> <code>dU6:3</code>) and paired 430–740 bp TIDE/ICE PCR primers.';
+    guidesSub.innerHTML = `Includes ${backboneTxt}, paired 430–740 bp TIDE/ICE PCR primers, and background gnomAD common SNP screening (MAF &ge;1%).`;
+  } else if (r.species_id === 'fly' && nucId !== 'cas12a') {
+    guidesSub.innerHTML = `Includes ${backboneTxt} (swap <code>5&prime;-CACC</code> &rarr; <code>5&prime;-GTCG</code> if cloning into Drosophila <code>pCFD3</code> <code>dU6:3</code>) and paired 430–740 bp TIDE/ICE PCR primers.`;
   } else {
-    guidesSub.innerHTML = `Includes U6 Golden Gate oligos (<code>BsmBI</code>/<code>BbsI</code>) and paired 430–740 bp TIDE/ICE PCR primers on <code>${esc(r.assembly)}</code>.`;
+    guidesSub.innerHTML = `Includes ${backboneTxt} and paired 430–740 bp TIDE/ICE PCR primers on <code>${esc(r.assembly)}</code>.`;
   }
 
   document.getElementById('offtarget-assembly-note').innerHTML = `
-    <strong>Before ordering oligos — 10-second genome-wide off-target check:</strong> Local rules rank on-target quality &amp; biological safety; paste your chosen 2–3 spacers into <strong>Cas-OFFinder</strong>${(r.species_id === 'human' || r.species_id === 'mouse' || r.species_id === 'rat') ? ' or <strong>Broad CRISPick</strong>' : ''} to verify zero 0–2 mismatch off-target sites across <strong>${esc(r.assembly)}</strong>.`;
+    <strong>Before ordering oligos — 10-second genome-wide off-target check:</strong> Local rules rank on-target quality &amp; biological safety; paste your chosen 2–3 spacers into <strong>Cas-OFFinder</strong> (set PAM = <code>${esc(pamLbl)}</code>)${(r.species_id === 'human' || r.species_id === 'mouse' || r.species_id === 'rat') ? ' or <strong>Broad CRISPick</strong>' : ''} to verify zero 0–2 mismatch off-target sites across <strong>${esc(r.assembly)}</strong>.`;
 
   const vEl = document.getElementById('res-verdict');
   vEl.className = `verdict verdict-${r.modality.risk_level}`;
@@ -1915,6 +2008,7 @@ function loadDemoBatch() {
 
 async function runBatchTriage() {
   const sp = getScopeSpecies('batch');
+  const nuc = getScopeNuclease('batch');
   const raw = document.getElementById('batch-genes').value || '';
   const seenLower = new Set();
   const tokens = [];
@@ -1947,8 +2041,8 @@ async function runBatchTriage() {
   let cursor = 0;
   const updateProg = () => {
     prog.textContent = done < tokens.length
-      ? `Completed ${done}/${tokens.length} ${SPECIES_META[sp].label} genes (running 3 parallel checks)...`
-      : `Finished all ${tokens.length} ${SPECIES_META[sp].label} genes! Click any gene row in the matrix below to view its full report right underneath.`;
+      ? `Completed ${done}/${tokens.length} ${SPECIES_META[sp].label} genes w/ ${NUCLEASE_META[nuc].tag} (running 3 parallel checks)...`
+      : `Finished all ${tokens.length} ${SPECIES_META[sp].label} genes (${NUCLEASE_META[nuc].tag})! Click any gene row in the matrix below to view its full report right underneath.`;
   };
   updateProg();
 
@@ -1957,7 +2051,7 @@ async function runBatchTriage() {
       const idx = cursor++;
       const row = BATCH_ROWS[idx];
       try {
-        const params = new URLSearchParams({ _route: 'check', species: sp, gene: row.gene });
+        const params = new URLSearchParams({ _route: 'check', species: sp, nuclease: nuc, gene: row.gene });
         if (tissue) params.set('tissue', tissue);
         if (cell) params.set('cell_line', cell);
         const resp = await fetch(`/api/check?${params.toString()}`, { cache: 'no-store' });
@@ -2099,9 +2193,10 @@ function openBatchRow(idx, shouldScroll = true) {
   if (!row || !row.payload) return;
   SELECTED_BATCH_IDX = idx;
   const sp = row.payload.report.species_id || getScopeSpecies('batch');
+  const nuc = row.payload.report.nuclease_id || getScopeNuclease('batch');
   const tissue = sp === 'human' ? document.getElementById('batch-tissue').value.trim() : '';
   const cell = document.getElementById('batch-cell').value.trim();
-  syncUrlPermalink(row.payload.report.gene_symbol, tissue, cell, sp);
+  syncUrlPermalink(row.payload.report.gene_symbol, tissue, cell, sp, nuc);
   renderBatchTable();
   applyLoadedPayload(row.payload);
   renderBatchReportNav();
@@ -2113,7 +2208,7 @@ function openBatchRow(idx, shouldScroll = true) {
 function exportBatchCsv() {
   const ready = BATCH_ROWS.filter(r => r.payload);
   if (!ready.length) return;
-  const lines = ['Species,Assembly,Gene,Gene_ID,Risk_Level,Recommended_Modality,Chronos,CCLE_Genetics,Tissue_TPM,Top_Paralog,Best_Exon,Top_Spacer_20nt,Top_U6_Fwd_Oligo,Top_U6_Rev_Oligo'];
+  const lines = ['Species,Assembly,Nuclease,PAM,Gene,Gene_ID,Risk_Level,Recommended_Modality,Chronos,CCLE_Genetics,Tissue_TPM,Top_Paralog,Best_Exon,Top_Spacer,Top_Fwd_Oligo,Top_Rev_Oligo'];
   ready.forEach(({ payload }) => {
     const r = payload.report;
     const ess = r.essentiality;
@@ -2127,6 +2222,8 @@ function exportBatchCsv() {
     lines.push([
       r.species_common_name || 'Human',
       r.assembly,
+      r.nuclease_label || 'SpCas9',
+      r.pam_label || 'NGG',
       r.gene_symbol,
       r.ensembl_id,
       r.modality.risk_level,
@@ -2154,6 +2251,11 @@ window.addEventListener('DOMContentLoaded', () => {
     onSpeciesChange('single', false);
     onSpeciesChange('batch', false);
   }
+  const qNuclease = (urlParams.get('nuclease') || '').trim().toLowerCase();
+  if (qNuclease && NUCLEASE_META[qNuclease]) {
+    document.getElementById('nuclease-input').value = qNuclease;
+    document.getElementById('batch-nuclease').value = qNuclease;
+  }
   const qGene = urlParams.get('gene');
   const qTissue = urlParams.get('tissue');
   const qCell = urlParams.get('cell_line');
@@ -2172,35 +2274,87 @@ window.addEventListener('DOMContentLoaded', () => {
 """
 
 
-def make_handler(use_cache: bool = True) -> type[BaseHTTPRequestHandler]:
+def make_handler(
+    use_cache: bool = True,
+    rate_limit_per_min: int = 60,
+) -> type[BaseHTTPRequestHandler]:
     """Create an HTTP request handler bound to a shared thread-safe PreflightRunner."""
     shared_http = CachedHttpClient(use_cache=use_cache)
     shared_runner = PreflightRunner(http=shared_http, check_pams=True)
     hot_lock = threading.Lock()
-    hot_payloads: dict[tuple[str, str, Optional[str], Optional[str]], tuple[bytes, float]] = {}
+    hot_payloads: dict[tuple[str, str, str, Optional[str], Optional[str]], tuple[bytes, float]] = {}
+    rl_lock = threading.Lock()
+    rl_salt = os.urandom(16)
+    rl_buckets: dict[str, deque[float]] = {}
 
     class PreflightRequestHandler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: Any) -> None:
-            # Keep server console logs clean and readable
+            # Keep server console logs clean and never log client IPs or paths
             return
 
-        def _send_raw_json(self, status: int, raw: bytes) -> None:
+        def _client_bucket_key(self) -> str:
+            """Return an anonymized salted hash of the client IP (never retains raw IPs)."""
+            fwd = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+            raw_ip = fwd or (self.client_address[0] if self.client_address else "local")
+            return hashlib.sha256(rl_salt + raw_ip.encode("utf-8", errors="ignore")).hexdigest()[:16]
+
+        def _check_rate_limit(self) -> bool:
+            """Return True if within the sliding 60-second request budget, False if throttled."""
+            if rate_limit_per_min <= 0:
+                return True
+            now = time.monotonic()
+            bkey = self._client_bucket_key()
+            with rl_lock:
+                if len(rl_buckets) > 2048:
+                    rl_buckets.clear()
+                q = rl_buckets.setdefault(bkey, deque())
+                while q and (now - q[0]) > 60.0:
+                    q.popleft()
+                if len(q) >= rate_limit_per_min:
+                    return False
+                q.append(now)
+                return True
+
+        def _send_raw_json(
+            self,
+            status: int,
+            raw: bytes,
+            extra_headers: Optional[dict[str, str]] = None,
+        ) -> None:
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Cache-Control", "no-store, max-age=0")
+            if extra_headers:
+                for hk, hv in extra_headers.items():
+                    self.send_header(hk, hv)
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
             self.wfile.write(raw)
 
-        def _send_json(self, status: int, payload: dict[str, Any]) -> None:
-            self._send_raw_json(status, json.dumps(payload).encode("utf-8"))
+        def _send_json(
+            self,
+            status: int,
+            payload: dict[str, Any],
+            extra_headers: Optional[dict[str, str]] = None,
+        ) -> None:
+            self._send_raw_json(status, json.dumps(payload).encode("utf-8"), extra_headers=extra_headers)
 
         def do_POST(self) -> None:  # noqa: N802
+            if len(self.path) > 2048:
+                self._send_json(HTTPStatus.REQUEST_URI_TOO_LONG, {"error": "Request URI too long"})
+                return
             parsed = urllib.parse.urlparse(self.path)
             qs = urllib.parse.parse_qs(parsed.query)
             route_hint = (qs.get("_route") or qs.get("__route") or [""])[0].strip()
             post_path = f"/api/{route_hint}" if route_hint in ("snp-check",) else parsed.path
             if post_path == "/api/snp-check":
+                if not self._check_rate_limit():
+                    self._send_json(
+                        HTTPStatus.TOO_MANY_REQUESTS,
+                        {"error": "Rate limit exceeded. Please wait 30 seconds before retrying."},
+                        extra_headers={"Retry-After": "30"},
+                    )
+                    return
                 try:
                     length = int(self.headers.get("Content-Length") or 0)
                 except ValueError:
@@ -2228,6 +2382,9 @@ def make_handler(use_cache: bool = True) -> type[BaseHTTPRequestHandler]:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
 
         def do_GET(self) -> None:  # noqa: N802
+            if len(self.path) > 2048:
+                self._send_json(HTTPStatus.REQUEST_URI_TOO_LONG, {"error": "Request URI too long"})
+                return
             parsed = urllib.parse.urlparse(self.path)
             qs = urllib.parse.parse_qs(parsed.query)
             route_hint = (qs.get("_route") or qs.get("__route") or [""])[0].strip()
@@ -2259,6 +2416,13 @@ def make_handler(use_cache: bool = True) -> type[BaseHTTPRequestHandler]:
                 return
 
             if path == "/api/snp-check":
+                if not self._check_rate_limit():
+                    self._send_json(
+                        HTTPStatus.TOO_MANY_REQUESTS,
+                        {"error": "Rate limit exceeded. Please wait 30 seconds before retrying."},
+                        extra_headers={"Retry-After": "30"},
+                    )
+                    return
                 qs = urllib.parse.parse_qs(parsed.query)
                 raw_specs = (qs.get("specs") or [""])[0]
                 try:
@@ -2279,6 +2443,7 @@ def make_handler(use_cache: bool = True) -> type[BaseHTTPRequestHandler]:
             if path == "/api/check":
                 qs = urllib.parse.parse_qs(parsed.query)
                 species = (qs.get("species") or ["human"])[0].strip() or "human"
+                nuclease = (qs.get("nuclease") or ["spcas9"])[0].strip() or "spcas9"
                 gene = (qs.get("gene") or [""])[0].strip()
                 tissue = (qs.get("tissue") or [""])[0].strip() or None
                 cell_line = (qs.get("cell_line") or [""])[0].strip() or None
@@ -2288,9 +2453,22 @@ def make_handler(use_cache: bool = True) -> type[BaseHTTPRequestHandler]:
                         {"error": "Please provide a gene symbol (e.g. STAT3, Trp53, smarca4a, Stat92E, cep-1)."},
                     )
                     return
+                if (
+                    len(gene) > 80
+                    or len(species) > 32
+                    or len(nuclease) > 32
+                    or (tissue and len(tissue) > 60)
+                    or (cell_line and len(cell_line) > 80)
+                ):
+                    self._send_json(
+                        HTTPStatus.BAD_REQUEST,
+                        {"error": "Query parameter exceeds maximum allowed length."},
+                    )
+                    return
 
                 hot_key = (
                     species.lower(),
+                    nuclease.lower(),
                     gene.upper(),
                     tissue.lower() if tissue else None,
                     cell_line.lower() if cell_line else None,
@@ -2302,12 +2480,21 @@ def make_handler(use_cache: bool = True) -> type[BaseHTTPRequestHandler]:
                         self._send_raw_json(HTTPStatus.OK, hit[0])
                         return
 
+                if not self._check_rate_limit():
+                    self._send_json(
+                        HTTPStatus.TOO_MANY_REQUESTS,
+                        {"error": "Rate limit exceeded (max 60 checks/min). Please wait ~30 seconds and retry."},
+                        extra_headers={"Retry-After": "30"},
+                    )
+                    return
+
                 try:
                     report = shared_runner.run(
                         gene_query=gene,
                         tissue=tissue,
                         cell_line=cell_line,
                         species=species,
+                        nuclease=nuclease,
                     )
                 except ValueError as exc:
                     self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})

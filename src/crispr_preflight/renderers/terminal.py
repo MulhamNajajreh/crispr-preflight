@@ -49,10 +49,13 @@ def render_terminal(
     tx = report.primary_transcript
     mane_badge = "MANE Select" if tx.is_mane_select else ("Canonical" if tx.is_canonical else "Primary")
 
+    nuc_lbl = report.nuclease_label or "SpCas9"
+    pam_lbl = report.pam_label or "NGG"
+    sp_len = report.spacer_length_nt or 20
     lines.append("=" * 92)
     lines.append(
         f" {st.bold('CRISPR-PREFLIGHT REPORT')}  |  {st.cyan(report.gene_symbol)} ({report.ensembl_id})  |  "
-        f"{report.species_common_name} {report.assembly} {report.chrom} {strand_str}"
+        f"{report.species_common_name} {report.assembly} {report.chrom} {strand_str}  |  {nuc_lbl} ({pam_lbl})"
     )
     if report.gene_description:
         lines.append(f" {st.dim(report.gene_description)}")
@@ -138,7 +141,7 @@ def render_terminal(
         else f"(top {len(display_exons)} of {len(coding_exons)} coding exons ranked by safety; pass --all-exons for all)"
     )
     lines.append(f"\n{st.bold('3. TARGETABLE EXON AUDIT')} {st.dim(title_suffix)}")
-    header = f"   {'Exon':<6} {'Score':<7} {'Tier':<13} {'AA Span':<11} {'Symm':<6} {'Isoforms':<9} {'NGG':<5} {'NMD Status':<20} {'CRISPick Region (GRCh38)'}"
+    header = f"   {'Exon':<6} {'Score':<7} {'Tier':<13} {'AA Span':<11} {'Symm':<6} {'Isoforms':<9} {pam_lbl[:6]:<6} {'NMD Status':<20} {'Target Region (' + report.assembly + ')'}"
     lines.append(st.bold(header))
     lines.append("   " + "-" * 104)
 
@@ -162,19 +165,19 @@ def render_terminal(
         if notes:
             lines.append(f"          {st.dim('• ' + ' | '.join(notes[:2]))}")
 
-    # 3b. Candidate SpCas9 sgRNA Spacer Sequences
+    # 3b. Candidate Guide Spacer Sequences
     if report.recommended_guides:
         lines.append(
-            f"\n{st.bold('4. CANDIDATE SpCas9 sgRNA SPACERS (20-nt + NGG)')} "
-            f"{st.dim('(verify genome-wide off-targets in Cas-OFFinder / CRISPick before ordering)')}"
+            f"\n{st.bold(f'4. CANDIDATE {nuc_lbl} SPACERS ({sp_len}-nt, PAM={pam_lbl})')} "
+            f"{st.dim('(verify genome-wide off-targets in Cas-OFFinder before ordering)')}"
         )
-        g_hdr = f"   {'Guide ID':<16} {'Exon/AA':<12} {'20-nt Spacer (5->3)':<22} {'PAM':<5} {'GC%':<5} {'Score':<7} {'U6 Fwd Oligo (BsmBI/BbsI)'}"
+        g_hdr = f"   {'Guide ID':<16} {'Exon/AA':<12} {f'{sp_len}-nt Spacer (5->3)':<25} {'PAM':<7} {'GC%':<5} {'Score':<7} {'Golden Gate Fwd Oligo'}"
         lines.append(st.bold(g_hdr))
-        lines.append("   " + "-" * 104)
+        lines.append("   " + "-" * 106)
         for g in report.recommended_guides:
             ex_aa = f"E{g.exon_number} aa{g.aa_cut}"
             lines.append(
-                f"   {g.guide_id:<16} {ex_aa:<12} {st.cyan(g.spacer_20nt):<22} {g.pam:<5} "
+                f"   {g.guide_id:<16} {ex_aa:<12} {st.cyan(g.spacer_20nt):<25} {g.pam:<7} "
                 f"{str(g.gc_percent) + '%':<5} {str(g.sequence_score) + '/100':<7} 5'-{g.cloning_fwd_oligo}-3'"
             )
             if g.genotyping_primers:

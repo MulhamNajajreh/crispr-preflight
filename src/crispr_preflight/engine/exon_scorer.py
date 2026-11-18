@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from crispr_preflight.engine.primers import design_tide_ice_primers
 from crispr_preflight.models import ExonAudit, GuideCandidate, IsoformSummary, ProteinDomain
+from crispr_preflight.nucleases import NucleaseConfig, resolve_nuclease
 
 _DNA_COMPLEMENT = str.maketrans("ACGT", "TGCA")
 
@@ -159,44 +160,232 @@ def find_internal_inframe_mets(cds_seq: str, max_nt: int = 450) -> list[int]:
     return mets
 
 
+def _scan_nuclease_sites(
+    seq: str,
+    p_start: int,
+    c_start: int,
+    c_end: int,
+    nuc: NucleaseConfig,
+) -> list[tuple[str, str, str, int, int, int]]:
+    """Scan a forward genomic slice for valid (spacer, pam, strand, cut_pos, g_win_start, g_win_end) sites."""
+    valid_bases = {"A", "C", "G", "T"}
+    nid = nuc.nuclease_id
+    w_len = nuc.window_length
+    n = len(seq)
+    hits: list[tuple[str, str, str, int, int, int]] = []
+    if n < w_len:
+        return hits
+
+    for i in range(0, n - w_len + 1):
+        window = seq[i : i + w_len]
+        if any(ch not in valid_bases for ch in window):
+            continue
+        g_ws = p_start + i
+        g_we = g_ws + w_len - 1
+
+        if nid in ("spcas9", "spcas9_hf"):
+            # 20-nt + 3'-NGG (23 bp)
+            if window[21:23] == "GG":
+                cut_idx = i + 17
+                if c_start <= cut_idx < c_end:
+                    hits.append((window[0:20], window[20:23], "+", p_start + cut_idx, g_ws, g_we))
+            if window[0:2] == "CC":
+                cut_idx = i + 6
+                if c_start <= cut_idx < c_end:
+                    rc_w = reverse_complement(window)
+                    hits.append((rc_w[0:20], rc_w[20:23], "-", p_start + cut_idx, g_ws, g_we))
+
+        elif nid == "spg":
+            # 20-nt + 3'-NGN (23 bp; Walton et al., Science 2020)
+            if window[21] == "G":
+                cut_idx = i + 17
+                if c_start <= cut_idx < c_end:
+                    hits.append((window[0:20], window[20:23], "+", p_start + cut_idx, g_ws, g_we))
+            if window[1] == "C":
+                cut_idx = i + 6
+                if c_start <= cut_idx < c_end:
+                    rc_w = reverse_complement(window)
+                    hits.append((rc_w[0:20], rc_w[20:23], "-", p_start + cut_idx, g_ws, g_we))
+
+        elif nid == "sacas9":
+            # 21-nt + 3'-NNGRRT (27 bp; Ran et al., Nature 2015)
+            if window[23] == "G" and window[24] in ("A", "G") and window[25] in ("A", "G") and window[26] == "T":
+                cut_idx = i + 18
+                if c_start <= cut_idx < c_end:
+                    hits.append((window[0:21], window[21:27], "+", p_start + cut_idx, g_ws, g_we))
+            if window[0] == "A" and window[1] in ("C", "T") and window[2] in ("C", "T") and window[3] == "C":
+                cut_idx = i + 9
+                if c_start <= cut_idx < c_end:
+                    rc_w = reverse_complement(window)
+                    hits.append((rc_w[0:21], rc_w[21:27], "-", p_start + cut_idx, g_ws, g_we))
+
+        elif nid == "cas12a":
+            # 5'-TTTV + 23-nt (27 bp; Zetsche et al., Cell 2015; staggered cut centered at +19 nt of spacer)
+            if window[0:3] == "TTT" and window[3] in ("A", "C", "G"):
+                cut_idx = i + 23
+                if c_start <= cut_idx < c_end:
+                    hits.append((window[4:27], window[0:4], "+", p_start + cut_idx, g_ws, g_we))
+            if window[24:27] == "AAA" and window[23] in ("C", "G", "T"):
+                cut_idx = i + 4
+                if c_start <= cut_idx < c_end:
+                    rc_w = reverse_complement(window)
+                    hits.append((rc_w[4:27], rc_w[0:4], "-", p_start + cut_idx, g_ws, g_we))
+
+    return hits
+
+
 def count_spcas9_cut_sites(
     padded_forward_seq: str,
     left_pad: int,
     coding_len: int,
+    nuclease_id: str = "spcas9",
 ) -> int:
-    """Count canonical SpCas9 (20nt + NGG / CCN + 20nt) cut sites landing inside [left_pad, left_pad + coding_len)."""
+    """Count nuclease cut sites landing inside [left_pad, left_pad + coding_len)."""
     if not padded_forward_seq or coding_len <= 0:
         return 0
-    seq = padded_forward_seq.upper()
-    valid_bases = {"A", "C", "G", "T"}
-    c_start = left_pad
-    c_end = left_pad + coding_len  # exclusive upper bound for cut coordinate
-    cuts = 0
-    n = len(seq)
-    for i in range(0, n - 23 + 1):
-        window = seq[i : i + 23]
-        if any(ch not in valid_bases for ch in window):
-            continue
-        # Sense sgRNA: [0..19 spacer][20 N][21..22 GG], cut after index i+16 (position i+17)
-        if window[21:23] == "GG":
-            cut_idx = i + 17
-            if c_start <= cut_idx < c_end:
-                cuts += 1
-        # Antisense sgRNA: [0..1 CC][2 N][3..22 rc-spacer], cut after index i+5 (position i+6)
-        if window[0:2] == "CC":
-            cut_idx = i + 6
-            if c_start <= cut_idx < c_end:
-                cuts += 1
-    return cuts
+    nuc = resolve_nuclease(nuclease_id)
+    hits = _scan_nuclease_sites(
+        seq=padded_forward_seq.upper(),
+        p_start=1,
+        c_start=left_pad,
+        c_end=left_pad + coding_len,
+        nuc=nuc,
+    )
+    return len(hits)
 
 
-def _build_u6_golden_gate_oligos(spacer_20nt: str) -> tuple[str, str]:
-    """Build standard Zhang-lab U6 Golden Gate cloning oligos (BsmBI lentiCRISPRv2 / BbsI PX459)."""
-    sp = spacer_20nt.upper()
+def _build_cloning_oligos(spacer: str, nuc: NucleaseConfig) -> tuple[str, str]:
+    """Build standard Golden Gate U6 cloning oligos matched to the nuclease backbone."""
+    sp = spacer.upper()
     rc = reverse_complement(sp)
+    if nuc.nuclease_id == "cas12a":
+        # Zhang-lab AsCas12a/LbCas12a U6 direct-repeat BsmBI overhangs (pY010 / pY016 / pRDA_052)
+        return f"AGAT{sp}", f"AAAA{rc}"
     if sp.startswith("G"):
         return f"CACC{sp}", f"AAAC{rc}"
     return f"CACCG{sp}", f"AAAC{rc}C"
+
+
+def _score_nuclease_spacer(
+    spacer: str,
+    pam: str,
+    nuc: NucleaseConfig,
+    base_score: int = 82,
+) -> tuple[int, int, list[str], str, str]:
+    """Evaluate GC%, PAM/seed rules, homopolymers, and Golden Gate restriction sites for any nuclease."""
+    s_len = len(spacer)
+    gc_count = spacer.count("G") + spacer.count("C")
+    gc_pct = int(round((gc_count / float(s_len)) * 100))
+    s_score = base_score
+    notes: list[str] = []
+    nid = nuc.nuclease_id
+
+    opt_low = 35 if nid == "cas12a" else 40
+    if opt_low <= gc_pct <= 65:
+        s_score += 6
+        notes.append(f"Optimal GC ({gc_pct}%)")
+    elif 30 <= gc_pct <= 70:
+        s_score -= 4
+        notes.append(f"Moderate GC ({gc_pct}%)")
+    else:
+        s_score -= 22
+        notes.append(f"Extreme GC ({gc_pct}%)")
+
+    if nuc.pam_orientation == "5prime":
+        # Cas12a (5'-TTTV + 23-nt): 5' seed is spacer[0:8] immediately 3' of TTTV PAM (Kim et al., Nat Methods 2017)
+        if spacer[0] == "T":
+            s_score -= 14
+            notes.append("Disfavored T at pos 1 after TTTV")
+        elif spacer[0] in ("C", "G"):
+            s_score += 5
+            notes.append(f"Favored {spacer[0]} at pos 1")
+        seed_gc = spacer[0:8].count("G") + spacer[0:8].count("C")
+        if 3 <= seed_gc <= 6:
+            s_score += 4
+            notes.append("Balanced 5' seed")
+        if len(pam) >= 4 and pam[3] in ("C", "G"):
+            s_score += 2
+    else:
+        # 3'-PAM Cas9 orthologs (SpCas9, SpCas9-HF, SpG, SaCas9): seed is 3' PAM-proximal end
+        last_nt = spacer[-1]
+        if last_nt == "G":
+            s_score += 6
+            notes.append(f"G at pos {s_len}")
+        elif last_nt == "C":
+            s_score += 2
+        elif last_nt == "T":
+            s_score -= 8
+            notes.append(f"Disfavored T at pos {s_len}")
+
+        if nid in ("spcas9", "spcas9_hf"):
+            if pam[0] in ("C", "G"):
+                s_score += 2
+            elif pam[0] == "T":
+                s_score -= 3
+        elif nid == "spg":
+            # Walton et al. (2020): NGG/NGC/NGA slightly outperform NGT
+            if len(pam) >= 3 and pam[2] == "G":
+                s_score += 4
+                notes.append(f"Canonical {pam} PAM")
+            elif len(pam) >= 3 and pam[2] in ("A", "C"):
+                s_score += 2
+                notes.append(f"Active {pam} PAM")
+            elif len(pam) >= 3 and pam[2] == "T":
+                s_score -= 4
+                notes.append(f"Moderate {pam} PAM")
+        elif nid == "sacas9":
+            # Ran et al. (2015): NNGGGT / NNGAAT / NNGAGT / NNGGAT
+            if len(pam) >= 6 and pam[3:5] == "GG":
+                s_score += 4
+                notes.append(f"Optimal {pam} PAM")
+            elif len(pam) >= 6:
+                s_score += 2
+
+        if nid == "spcas9_hf":
+            # Kim et al. (2017) & Kulcsar et al. (2017): unmatched 5'-G impairs eSpCas9(1.1) & SpCas9-HF1 under U6
+            if spacer.startswith("G"):
+                s_score += 12
+                notes.append("Native 5'-G (ideal U6 match for eSpCas9/HF1)")
+            else:
+                s_score -= 14
+                notes.append(f"Starts w/ {spacer[0]} (use RNP or tRNA-sgRNA for eSpCas9/HF1)")
+        elif nid == "spg" and spacer.startswith("G"):
+            s_score += 4
+            notes.append("Native 5'-G")
+
+        prox4 = spacer[-4:]
+        if "TT" in prox4:
+            s_score -= 15
+            notes.append("Graf PAM-proximal TT motif")
+        if "GCC" in prox4:
+            s_score -= 12
+            notes.append("Graf PAM-proximal GCC motif")
+
+    if "GGGG" in spacer:
+        s_score -= 18
+        notes.append("GGGG G-quadruplex risk")
+    elif "AAAA" in spacer or "CCCC" in spacer:
+        s_score -= 8
+        notes.append("4-nt homopolymer")
+
+    fwd_oligo, rev_oligo = _build_cloning_oligos(spacer, nuc)
+    if nid == "sacas9":
+        if "GGTCTC" in fwd_oligo or "GAGACC" in fwd_oligo:
+            s_score -= 6
+            notes.append("Internal BsaI site (pX601)")
+    elif nid == "cas12a":
+        if "CGTCTC" in fwd_oligo or "GAGACG" in fwd_oligo:
+            s_score -= 6
+            notes.append("Internal BsmBI site")
+    else:
+        if "CGTCTC" in fwd_oligo or "GAGACG" in fwd_oligo:
+            s_score -= 6
+            notes.append("Internal BsmBI site")
+        if "GAAGAC" in fwd_oligo or "GTCTTC" in fwd_oligo:
+            s_score -= 6
+            notes.append("Internal BbsI site")
+
+    return gc_pct, s_score, notes, fwd_oligo, rev_oligo
 
 
 def design_exon_sgrnas(
@@ -213,46 +402,23 @@ def design_exon_sgrnas(
     gene_symbol: str = "GENE",
     is_single_exon: bool = False,
     max_guides: int = 5,
+    nuclease_id: str = "spcas9",
 ) -> list[GuideCandidate]:
-    """Extract and rank clean on-target 20-nt SpCas9 (NGG) sgRNA candidates inside a coding exon.
-
-    Applies transparent, literature-grounded sequence filters:
-    - Excludes Pol III U6 terminator motifs ('TTTT')
-    - Scores GC% (optimal 40-65%), pos-20 nucleotide preference, PAM variable base,
-      Graf et al. (2019) PAM-proximal 'TT'/'GCC' inefficiency motifs, homopolymers,
-      splice-junction proximity, conserved domain overlap, and internal BsmBI/BbsI sites.
-    """
+    """Extract and rank clean on-target guide candidates inside a coding exon for the chosen nuclease."""
     if not padded_forward_seq or coding_len <= 0:
         return []
 
+    nuc = resolve_nuclease(nuclease_id)
     seq = padded_forward_seq.upper()
-    valid_bases = {"A", "C", "G", "T"}
     c_start = left_pad
     c_end = left_pad + coding_len
     p_start = coding_genomic_start - left_pad
 
-    raw_hits: list[tuple[str, str, str, int, int, int]] = []
-    n = len(seq)
-    for i in range(0, n - 23 + 1):
-        window = seq[i : i + 23]
-        if any(ch not in valid_bases for ch in window):
-            continue
-        g_s23 = p_start + i
-        g_e23 = p_start + i + 22
-        if window[21:23] == "GG":
-            cut_idx = i + 17
-            if c_start <= cut_idx < c_end:
-                raw_hits.append((window[0:20], window[20:23], "+", p_start + cut_idx, g_s23, g_e23))
-        if window[0:2] == "CC":
-            cut_idx = i + 6
-            if c_start <= cut_idx < c_end:
-                rc_win = reverse_complement(window)
-                raw_hits.append((rc_win[0:20], rc_win[20:23], "-", p_start + cut_idx, g_s23, g_e23))
-
+    raw_hits = _scan_nuclease_sites(seq, p_start, c_start, c_end, nuc)
     scored: list[GuideCandidate] = []
     seen_spacers: set[tuple[str, int]] = set()
 
-    for spacer, pam, g_strand, cut_pos, g_s23, g_e23 in raw_hits:
+    for spacer, pam, g_strand, cut_pos, g_s_win, g_e_win in raw_hits:
         if "TTTT" in spacer:
             # Hard-exclude Pol III U6 transcription termination signal
             continue
@@ -274,55 +440,12 @@ def design_exon_sgrnas(
                 dom_hit = dom.description
                 break
 
-        gc_count = spacer.count("G") + spacer.count("C")
-        gc_pct = int(round((gc_count / 20.0) * 100))
-
-        s_score = 82
-        notes: list[str] = []
-
-        if 40 <= gc_pct <= 65:
-            s_score += 6
-            notes.append(f"Optimal GC ({gc_pct}%)")
-        elif 35 <= gc_pct <= 70:
-            s_score -= 4
-            notes.append(f"Moderate GC ({gc_pct}%)")
-        else:
-            s_score -= 22
-            notes.append(f"Extreme GC ({gc_pct}%)")
-
-        # Seed position 20 (immediately 5' of NGG PAM; Doench et al. 2014/2016)
-        pos20 = spacer[19]
-        if pos20 == "G":
-            s_score += 6
-            notes.append("G at pos 20")
-        elif pos20 == "C":
-            s_score += 2
-        elif pos20 == "T":
-            s_score -= 8
-            notes.append("Disfavored T at pos 20")
-
-        # Variable base N of NGG PAM (CGG/GGG > AGG > TGG)
-        if pam[0] in ("C", "G"):
-            s_score += 2
-        elif pam[0] == "T":
-            s_score -= 3
-
-        # Graf et al., Cell Reports (2019): PAM-proximal 4-nt inefficiency motifs
-        prox4 = spacer[16:20]
-        if "TT" in prox4:
-            s_score -= 15
-            notes.append("Graf PAM-proximal TT motif")
-        if "GCC" in prox4:
-            s_score -= 12
-            notes.append("Graf PAM-proximal GCC motif")
-
-        # Homopolymers
-        if "GGGG" in spacer:
-            s_score -= 18
-            notes.append("GGGG G-quadruplex risk")
-        elif "AAAA" in spacer or "CCCC" in spacer:
-            s_score -= 8
-            notes.append("4-nt homopolymer")
+        gc_pct, s_score, notes, fwd_oligo, rev_oligo = _score_nuclease_spacer(
+            spacer=spacer,
+            pam=pam,
+            nuc=nuc,
+            base_score=82,
+        )
 
         # Conserved domain cut bonus (extra weight for intronless 1-exon genes where NMD is absent)
         if dom_hit:
@@ -338,14 +461,6 @@ def design_exon_sgrnas(
             notes.append("Near splice junction (<=3 bp)")
         else:
             s_score += 2
-
-        fwd_oligo, rev_oligo = _build_u6_golden_gate_oligos(spacer)
-        if "CGTCTC" in fwd_oligo or "GAGACG" in fwd_oligo:
-            s_score -= 6
-            notes.append("Internal BsmBI site")
-        if "GAAGAC" in fwd_oligo or "GTCTTC" in fwd_oligo:
-            s_score -= 6
-            notes.append("Internal BbsI site")
 
         s_score = max(0, min(100, s_score))
         tx_orient = (
@@ -372,8 +487,12 @@ def design_exon_sgrnas(
                 cloning_fwd_oligo=fwd_oligo,
                 cloning_rev_oligo=rev_oligo,
                 mode="KO",
-                genomic_start_23bp=g_s23,
-                genomic_end_23bp=g_e23,
+                genomic_start_23bp=g_s_win,
+                genomic_end_23bp=g_e_win,
+                nuclease=nuc.short_tag,
+                spacer_length=nuc.spacer_length,
+                pam_orientation=nuc.pam_orientation,
+                cloning_backbone_hint=nuc.cloning_backbone,
             )
         )
 
@@ -421,107 +540,84 @@ def design_crispri_tss_guides(
     gene_strand: int,
     gene_symbol: str = "GENE",
     max_guides: int = 5,
+    nuclease_id: str = "spcas9",
 ) -> list[GuideCandidate]:
-    """Design dCas9-KRAB CRISPRi promoter guides in [TSS - 50 bp .. TSS + 300 bp] (Horlbeck et al., eLife 2016)."""
+    """Design dCas9/dCas12a-KRAB CRISPRi promoter guides in [TSS - 50 bp .. TSS + 300 bp]."""
     if not tss_window_plus_seq or tss_pos <= 0:
         return []
+    nuc = resolve_nuclease(nuclease_id)
     seq = tss_window_plus_seq.upper()
-    valid_bases = {"A", "C", "G", "T"}
     chr_label = chrom if chrom.startswith("chr") else f"chr{chrom.replace('chr', '')}"
     n = len(seq)
 
+    raw_hits = _scan_nuclease_sites(seq, window_genomic_start, 0, n, nuc)
     cands: list[GuideCandidate] = []
     seen: set[tuple[str, int]] = set()
 
-    for i in range(0, n - 23 + 1):
-        window = seq[i : i + 23]
-        if any(ch not in valid_bases for ch in window):
+    for spacer, pam, g_strand, target_pos, g_s_win, g_e_win in raw_hits:
+        if "TTTT" in spacer or (spacer, target_pos) in seen:
             continue
-        g_s23 = window_genomic_start + i
-        g_e23 = g_s23 + 22
-        hits_here: list[tuple[str, str, str, int]] = []
-        if window[21:23] == "GG":
-            hits_here.append((window[0:20], window[20:23], "+", g_s23 + 17))
-        if window[0:2] == "CC":
-            rc_w = reverse_complement(window)
-            hits_here.append((rc_w[0:20], rc_w[20:23], "-", g_s23 + 6))
+        tss_off = (target_pos - tss_pos) if gene_strand >= 0 else (tss_pos - target_pos)
+        if tss_off < -50 or tss_off > 300:
+            continue
+        seen.add((spacer, target_pos))
 
-        for spacer, pam, g_strand, target_pos in hits_here:
-            if "TTTT" in spacer or (spacer, target_pos) in seen:
-                continue
-            tss_off = (target_pos - tss_pos) if gene_strand >= 0 else (tss_pos - target_pos)
-            if tss_off < -50 or tss_off > 300:
-                continue
-            seen.add((spacer, target_pos))
+        gc_pct, score, score_notes, fwd_oligo, rev_oligo = _score_nuclease_spacer(
+            spacer=spacer,
+            pam=pam,
+            nuc=nuc,
+            base_score=76,
+        )
+        notes: list[str] = []
+        # Horlbeck et al. (2016) & Gilbert et al. (2014): peak dCas-KRAB repression at +25..+125 bp past TSS
+        if 25 <= tss_off <= 125:
+            score += 12
+            notes.append(f"Peak CRISPRi window (TSS {tss_off:+d} bp)")
+        elif 0 <= tss_off <= 200:
+            score += 6
+            notes.append(f"Strong TSS window ({tss_off:+d} bp)")
+        else:
+            notes.append(f"Active TSS window ({tss_off:+d} bp)")
+        notes.extend(score_notes[:2])
 
-            gc_pct = int(round(((spacer.count("G") + spacer.count("C")) / 20.0) * 100))
-            score = 80
-            notes: list[str] = []
+        tx_orient = (
+            "Sense"
+            if ((g_strand == "+" and gene_strand >= 0) or (g_strand == "-" and gene_strand < 0))
+            else "Antisense"
+        )
+        if nuc.nuclease_id == "cas12a":
+            if tx_orient == "Sense" and 15 <= tss_off <= 150:
+                score += 6  # dCas12a favors template-strand pairing (Tak et al., Nat Methods 2017)
+        elif tx_orient == "Antisense" and 15 <= tss_off <= 150:
+            score += 3  # dCas9 non-template strand steric roadblock bonus
 
-            # Horlbeck et al. (2016) & Gilbert et al. (2014): peak dCas9-KRAB repression at +25..+125 bp past TSS
-            if 25 <= tss_off <= 125:
-                score += 12
-                notes.append(f"Peak CRISPRi window (TSS {tss_off:+d} bp)")
-            elif 0 <= tss_off <= 200:
-                score += 6
-                notes.append(f"Strong TSS window ({tss_off:+d} bp)")
-            else:
-                notes.append(f"Active TSS window ({tss_off:+d} bp)")
-
-            if 40 <= gc_pct <= 68:
-                score += 5
-                notes.append(f"GC {gc_pct}%")
-            elif gc_pct < 35 or gc_pct > 75:
-                score -= 18
-                notes.append(f"Extreme GC ({gc_pct}%)")
-
-            prox4 = spacer[16:20]
-            if "TT" in prox4:
-                score -= 14
-                notes.append("Graf TT motif")
-            if "GCC" in prox4:
-                score -= 10
-                notes.append("Graf GCC motif")
-            if "GGGG" in spacer:
-                score -= 18
-                notes.append("GGGG quadruplex risk")
-
-            tx_orient = (
-                "Sense"
-                if ((g_strand == "+" and gene_strand >= 0) or (g_strand == "-" and gene_strand < 0))
-                else "Antisense"
+        cands.append(
+            GuideCandidate(
+                guide_id="",
+                exon_number=0,
+                spacer_20nt=spacer,
+                pam=pam,
+                genomic_strand=g_strand,
+                transcript_orientation=tx_orient,
+                chrom=chr_label,
+                genomic_cut_pos=target_pos,
+                aa_cut=0,
+                gc_percent=gc_pct,
+                overlaps_domain=f"Promoter TSS {tss_off:+d} bp",
+                sequence_score=max(0, min(100, score)),
+                quality_notes=notes,
+                cloning_fwd_oligo=fwd_oligo,
+                cloning_rev_oligo=rev_oligo,
+                mode="CRISPRi",
+                tss_offset_bp=tss_off,
+                genomic_start_23bp=g_s_win,
+                genomic_end_23bp=g_e_win,
+                nuclease=nuc.short_tag,
+                spacer_length=nuc.spacer_length,
+                pam_orientation=nuc.pam_orientation,
+                cloning_backbone_hint=nuc.cloning_backbone,
             )
-            if tx_orient == "Antisense" and 15 <= tss_off <= 150:
-                score += 3  # Non-template target strand steric roadblock bonus
-
-            fwd_oligo, rev_oligo = _build_u6_golden_gate_oligos(spacer)
-            if "CGTCTC" in fwd_oligo or "GAGACG" in fwd_oligo or "GAAGAC" in fwd_oligo or "GTCTTC" in fwd_oligo:
-                score -= 6
-                notes.append("Internal BsmBI/BbsI site")
-
-            cands.append(
-                GuideCandidate(
-                    guide_id="",
-                    exon_number=0,
-                    spacer_20nt=spacer,
-                    pam=pam,
-                    genomic_strand=g_strand,
-                    transcript_orientation=tx_orient,
-                    chrom=chr_label,
-                    genomic_cut_pos=target_pos,
-                    aa_cut=0,
-                    gc_percent=gc_pct,
-                    overlaps_domain=f"Promoter TSS {tss_off:+d} bp",
-                    sequence_score=max(0, min(100, score)),
-                    quality_notes=notes,
-                    cloning_fwd_oligo=fwd_oligo,
-                    cloning_rev_oligo=rev_oligo,
-                    mode="CRISPRi",
-                    tss_offset_bp=tss_off,
-                    genomic_start_23bp=g_s23,
-                    genomic_end_23bp=g_e23,
-                )
-            )
+        )
 
     cands.sort(key=lambda g: (-g.sequence_score, abs((g.tss_offset_bp or 0) - 65), g.genomic_cut_pos))
     selected: list[GuideCandidate] = []
@@ -580,8 +676,10 @@ def score_transcript_exons(
     flanked_seqs: Optional[dict[tuple[int, int], Optional[str]]] = None,
     flank_pad: int = 25,
     gene_symbol: str = "GENE",
+    nuclease_id: str = "spcas9",
 ) -> list[ExonAudit]:
     """Audit and score every exon of the primary transcript in 5' -> 3' biological order."""
+    nuc = resolve_nuclease(nuclease_id)
     strand = int(primary_tx.get("strand", 1))
     raw_exons = list(primary_tx.get("Exon") or [])
     if strand >= 0:
@@ -727,14 +825,14 @@ def score_transcript_exons(
                 if label not in hit_domains:
                     hit_domains.append(label)
 
-        # 5. SpCas9 NGG PAM count & candidate 20-nt sgRNA extraction inside coding interval
+        # 5. Nuclease PAM count & candidate sgRNA/crRNA extraction inside coding interval
         pam_count: Optional[int] = None
         exon_guides: list[GuideCandidate] = []
         if flanked_seqs is not None and (ov_start, ov_end) in flanked_seqs:
             fseq = flanked_seqs[(ov_start, ov_end)]
             if fseq:
                 actual_left_pad = min(flank_pad, ov_start - 1)
-                pam_count = count_spcas9_cut_sites(fseq, actual_left_pad, coding_len)
+                pam_count = count_spcas9_cut_sites(fseq, actual_left_pad, coding_len, nuclease_id=nuc.nuclease_id)
                 exon_guides = design_exon_sgrnas(
                     padded_forward_seq=fseq,
                     left_pad=actual_left_pad,
@@ -749,6 +847,7 @@ def score_transcript_exons(
                     gene_symbol=gene_symbol,
                     is_single_exon=(total_exons == 1),
                     max_guides=5,
+                    nuclease_id=nuc.nuclease_id,
                 )
 
         # 6. Transparent additive Exon Priority Score (base = 80, clamped to 0..100)
@@ -815,13 +914,18 @@ def score_transcript_exons(
         if pam_count is not None:
             if pam_count == 0:
                 score -= 45
+                alt_hint = (
+                    "switch Nuclease to SpG [NGN] or Cas12a [TTTV]"
+                    if nuc.nuclease_id != "spg"
+                    else "select an adjacent exon"
+                )
                 breakdown.append(
-                    "-45 Zero canonical SpCas9 NGG cut sites inside coding interval (requires SpG/SpRY PAM variant)"
+                    f"-45 Zero {nuc.short_tag} ({nuc.pam_pattern}) cut sites inside coding interval ({alt_hint})"
                 )
             elif pam_count <= 2:
                 score -= 10
                 breakdown.append(
-                    f"-10 Sparse SpCas9 NGG options ({pam_count} cut site(s) in coding span)"
+                    f"-10 Sparse {nuc.short_tag} ({nuc.pam_pattern}) options ({pam_count} cut site(s) in coding span)"
                 )
 
         score = max(0, min(100, score))

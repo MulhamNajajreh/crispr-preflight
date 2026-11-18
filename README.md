@@ -11,6 +11,12 @@ Before you order sgRNA oligos and spend weeks cloning guides, selecting cells or
   - **Zebrafish** — *Danio rerio* (`GRCz11`)
   - **Fruit Fly** — *Drosophila melanogaster* (`BDGP6.46`)
   - **Roundworm** — *Caenorhabditis elegans* (`WBcel235`)
+- **5 CRISPR nucleases & PAM systems supported:**
+  - **SpCas9** (`20-nt + 3'-NGG`, `BsmBI`/`BbsI` U6 Golden Gate)
+  - **HiFi / eSpCas9 / SpCas9-HF1** (`20-nt + 3'-NGG`, native `5'-GN19` U6 matching rule)
+  - **SpG Cas9** (`20-nt + 3'-NGN`, PAM-relaxed 4x exon coverage)
+  - **SaCas9** (`21-nt + 3'-NNGRRT`, single-AAV `pX601` `BsaI` packaging)
+  - **AsCas12a / LbCas12a** (`5'-TTTV + 23-nt`, AT-rich genomes, staggered 5-nt cuts & `BsmBI` crRNA arrays)
 - **Zero third-party dependencies:** 100% Python (`>=3.9`) standard library — installs in seconds with `pip` or `uv` with zero compiled C/Rust dependencies.
 - **Zero API keys required:** Queries open public biological APIs (**EMBL-EBI Proteins & InterPro**, **NCBI RefSeq & Datasets v2**, **Ensembl**, **Alliance of Genome Resources (DIOPT)**, **Open Targets v4 / DepMap Chronos**, **cBioPortal CCLE**, **gnomAD**, **GTEx v10**, **Human Protein Atlas**, and **MyGene / MyVariant**) in parallel (~1.6–2.5s cold, <0.1s cached).
 - **Zero black boxes:** Every warning, `0–100` exon priority score, and guide candidate prints its exact biological math and reference genome coordinates.
@@ -91,8 +97,9 @@ Try auditing human `SMARCA4` in lung (`A549` cells) or mouse `Smarca4` on `GRCm3
 # Human (default: GRCh38)
 crispr-preflight check SMARCA4 --tissue lung --cell-line A549 --html SMARCA4_report.html
 
-# Mouse (GRCm39) — also supports: rat, zebrafish, fly, worm
-crispr-preflight check Smarca4 --species mouse --cell-line B16-F10 --html Mouse_Smarca4.html
+# Mouse (GRCm39) with single-AAV SaCas9 (21-nt + NNGRRT) or C. elegans with Cas12a (5'-TTTV)
+crispr-preflight check Smarca4 --species mouse --nuclease sacas9 --html Mouse_Smarca4_AAV.html
+crispr-preflight check cep-1 --species worm --nuclease cas12a
 ```
 
 ### 3. Batch Triage a Hit List (e.g. from RNA-seq or a CRISPR Screen)

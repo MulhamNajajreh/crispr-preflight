@@ -42,6 +42,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Model organism: human (default), mouse, rat, zebrafish, fly, or worm",
     )
     p_check.add_argument(
+        "-n",
+        "--nuclease",
+        default="spcas9",
+        help="CRISPR nuclease: spcas9 (default, NGG), spcas9_hf (HiFi/eSpCas9/HF1), spg (NGN), sacas9 (AAV NNGRRT), or cas12a (5'-TTTV)",
+    )
+    p_check.add_argument(
         "-t", "--tissue", default=None, help="Target tissue/lineage context (human GTEx/DepMap, e.g. lung, blood)"
     )
     p_check.add_argument(
@@ -69,6 +75,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--species",
         default="human",
         help="Model organism: human (default), mouse, rat, zebrafish, fly, or worm",
+    )
+    p_batch.add_argument(
+        "-n",
+        "--nuclease",
+        default="spcas9",
+        help="CRISPR nuclease: spcas9 (default), spcas9_hf, spg, sacas9, or cas12a",
     )
     p_batch.add_argument("-t", "--tissue", default=None, help="Target tissue/lineage context")
     p_batch.add_argument("-c", "--cell-line", default=None, help="DepMap cell line name")
@@ -137,6 +149,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 tissue=args.tissue,
                 cell_line=args.cell_line,
                 species=args.species,
+                nuclease=args.nuclease,
             )
         except Exception as exc:
             print(f"Error: {exc}", file=sys.stderr)
@@ -189,6 +202,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                     tissue=args.tissue,
                     cell_line=args.cell_line,
                     species=args.species,
+                    nuclease=args.nuclease,
                 )
             except Exception as exc:
                 print(f"  [!] Failed on {g}: {exc}", file=sys.stderr)
@@ -198,10 +212,17 @@ def main(argv: Optional[list[str]] = None) -> int:
             coding = [e for e in rep.exons if e.is_coding]
             best_ex = max(coding, key=lambda e: e.priority_score) if coding else None
             top_par = rep.paralogs[0] if rep.paralogs else None
+            top_g = (rep.recommended_guides[0] if rep.recommended_guides else None) or (
+                rep.crispri_guides[0] if rep.crispri_guides else None
+            )
             rows_out.append(
                 {
+                    "species": rep.species_common_name,
+                    "assembly": rep.assembly,
+                    "nuclease": rep.nuclease_label,
+                    "pam": rep.pam_label,
                     "gene": rep.gene_symbol,
-                    "ensembl_id": rep.ensembl_id,
+                    "gene_id": rep.ensembl_id,
                     "status": "OK",
                     "risk_level": rep.modality.risk_level,
                     "recommended_modality": rep.modality.primary_modality,
@@ -213,7 +234,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                     if top_par
                     else "",
                     "best_exon": f"Exon {best_ex.exon_number} ({best_ex.priority_score}/100)" if best_ex else "",
-                    "best_crispick_region": best_ex.crispick_target_region if best_ex else "",
+                    "best_target_region": best_ex.crispick_target_region if best_ex else "",
+                    "top_spacer": top_g.spacer_20nt if top_g else "",
+                    "top_fwd_oligo": top_g.cloning_fwd_oligo if top_g else "",
                     "chemical_probes": "; ".join(c.name for c in rep.validation.orthogonal_chemical_tools[:3]),
                 }
             )
@@ -221,8 +244,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                 (html_dir / f"{rep.gene_symbol}_preflight.html").write_text(render_html(rep), encoding="utf-8")
 
         fieldnames = [
+            "species",
+            "assembly",
+            "nuclease",
+            "pam",
             "gene",
-            "ensembl_id",
+            "gene_id",
             "status",
             "risk_level",
             "recommended_modality",
@@ -232,7 +259,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             "tissue_tpm",
             "top_paralog",
             "best_exon",
-            "best_crispick_region",
+            "best_target_region",
+            "top_spacer",
+            "top_fwd_oligo",
             "chemical_probes",
         ]
         with out_csv.open("w", newline="", encoding="utf-8") as fh:

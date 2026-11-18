@@ -21,6 +21,7 @@ from crispr_preflight.engine.exon_scorer import (
 )
 from crispr_preflight.engine.primers import calc_primer_tm, design_tide_ice_primers
 from crispr_preflight.models import ProteinDomain
+from crispr_preflight.nucleases import NUCLEASE_REGISTRY, resolve_nuclease
 from crispr_preflight.species import SPECIES_REGISTRY, resolve_species
 
 
@@ -415,6 +416,103 @@ class TestExonGeometryAndRules(unittest.TestCase):
         self.assertEqual(tx["Translation"]["end"], 2150)
         self.assertEqual(tx["Translation"]["length"], 99)
         self.assertEqual([(e["start"], e["end"]) for e in tx["Exon"]], [(1001, 1200), (2001, 2300)])
+
+    def test_multi_nuclease_orthologs_spg_hifi_sacas9_and_cas12a(self) -> None:
+        """Verify SpG (NGN), SpCas9-HF (native 5'-G), SaCas9 (21-nt + NNGRRT), and Cas12a (5'-TTTV + 23-nt)."""
+        self.assertEqual(set(NUCLEASE_REGISTRY.keys()), {"spcas9", "spcas9_hf", "spg", "sacas9", "cas12a"})
+        self.assertEqual(resolve_nuclease("aav").nuclease_id, "sacas9")
+        self.assertEqual(resolve_nuclease("cpf1").nuclease_id, "cas12a")
+        self.assertEqual(resolve_nuclease("hf1").nuclease_id, "spcas9_hf")
+        self.assertEqual(resolve_nuclease("ngn").nuclease_id, "spg")
+        with self.assertRaises(ValueError):
+            resolve_nuclease("meganuclease_xyz")
+
+        # 1. SpG (20-nt + NGN) rescues exons that have NGA/NGC/NGT but zero NGG!
+        seq_spg = list("A" * 100)
+        seq_spg[30:53] = list(("A" * 20) + "AGA")  # Single G in entire 100-bp window -> PAM = AGA (1 NGN site, 0 NGG!)
+        self.assertEqual(count_spcas9_cut_sites("".join(seq_spg), 25, 50, nuclease_id="spcas9"), 0)
+        self.assertEqual(count_spcas9_cut_sites("".join(seq_spg), 25, 50, nuclease_id="spg"), 1)
+
+        # 2. SpCas9-HF ranks native 5'-G spacer strictly above non-G spacer of identical GC%
+        seq_hf = list("A" * 140)
+        g_start_sp = "GCATGCATGCATGCAATGCG"  # starts with G (50% GC)
+        c_start_sp = "CATGCATGCATGCAATGCGC"  # starts with C (50% GC)
+        seq_hf[25:48] = list(g_start_sp + "CGG")
+        seq_hf[65:88] = list(c_start_sp + "CGG")
+        hf_guides = design_exon_sgrnas(
+            padded_forward_seq="".join(seq_hf),
+            left_pad=20,
+            coding_len=90,
+            chrom="chr17",
+            coding_genomic_start=1000,
+            coding_genomic_end=1089,
+            gene_strand=1,
+            cds_offset_start=1,
+            exon_number=2,
+            domains=[],
+            gene_symbol="TP53",
+            nuclease_id="spcas9_hf",
+        )
+        self.assertGreaterEqual(len(hf_guides), 2)
+        self.assertEqual(hf_guides[0].spacer_20nt, g_start_sp)
+        self.assertGreater(hf_guides[0].sequence_score, hf_guides[1].sequence_score + 15)
+
+        # 3. SaCas9 (21-nt + 3'-NNGRRT) on '+' and '-' strands
+        seq_sa = list("A" * 140)
+        sa_plus = "GCATGCATGCATGCAATGCGA"  # 21-nt
+        sa_minus = "ACGTACGTACGTACGTCGAGA"  # 21-nt
+        seq_sa[22:49] = list(sa_plus + "CTGGGT")  # NNGRRT = CTGGGT (cut at 22+18=40 inside [25, 115))
+        seq_sa[65:92] = list(reverse_complement(sa_minus + "TCGAAT"))  # NNGRRT = TCGAAT (cut at 65+9=74)
+        sa_guides = design_exon_sgrnas(
+            padded_forward_seq="".join(seq_sa),
+            left_pad=25,
+            coding_len=90,
+            chrom="chr11",
+            coding_genomic_start=2000,
+            coding_genomic_end=2089,
+            gene_strand=1,
+            cds_offset_start=1,
+            exon_number=4,
+            domains=[],
+            gene_symbol="Trp53",
+            nuclease_id="sacas9",
+        )
+        sa_map = {g.spacer_20nt: g for g in sa_guides}
+        self.assertIn(sa_plus, sa_map)
+        self.assertIn(sa_minus, sa_map)
+        self.assertEqual(sa_map[sa_plus].spacer_length, 21)
+        self.assertEqual(sa_map[sa_plus].pam, "CTGGGT")
+        self.assertEqual(sa_map[sa_minus].pam, "TCGAAT")
+
+        # 4. Cas12a (5'-TTTV + 23-nt) on '+' and '-' strands + AGAT/AAAA BsmBI crRNA oligos
+        seq_c12 = list("A" * 140)
+        c12_plus = "CGATGCATGCATGCAATGCGATC"  # 23-nt
+        c12_minus = "GCGTACGTACGTACGTCGAGATC"  # 23-nt
+        seq_c12[20:47] = list("TTTC" + c12_plus)  # cut at 20+23 = 43 inside [25, 115)
+        seq_c12[65:92] = list(reverse_complement("TTTG" + c12_minus))  # cut at 65+4 = 69 inside [25, 115)
+        c12_guides = design_exon_sgrnas(
+            padded_forward_seq="".join(seq_c12),
+            left_pad=25,
+            coding_len=90,
+            chrom="chrI",
+            coding_genomic_start=3000,
+            coding_genomic_end=3089,
+            gene_strand=1,
+            cds_offset_start=1,
+            exon_number=1,
+            domains=[],
+            gene_symbol="cep-1",
+            nuclease_id="cas12a",
+        )
+        c12_map = {g.spacer_20nt: g for g in c12_guides}
+        self.assertIn(c12_plus, c12_map)
+        self.assertIn(c12_minus, c12_map)
+        g_c12 = c12_map[c12_plus]
+        self.assertEqual(g_c12.pam, "TTTC")
+        self.assertEqual(g_c12.pam_orientation, "5prime")
+        self.assertEqual(g_c12.spacer_length, 23)
+        self.assertEqual(g_c12.cloning_fwd_oligo, f"AGAT{c12_plus}")
+        self.assertEqual(g_c12.cloning_rev_oligo, f"AAAA{reverse_complement(c12_plus)}")
 
 
 if __name__ == "__main__":

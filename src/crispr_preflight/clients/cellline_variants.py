@@ -247,8 +247,22 @@ class CellLineAndVariantClient:
             if not gid or not chrom or s is None or e is None:
                 continue
             s_i, e_i = min(int(s), int(e)), max(int(s), int(e))
+            pam_orient = str(sp.get("pam_orientation") or "3prime")
+            pam_len = int(sp.get("pam_len") or 3)
+            spacer_len = int(sp.get("spacer_len") or max(20, (e_i - s_i + 1) - pam_len))
             out[gid] = {"status": "CLEAN", "summary": "No common SNPs (MAF >=1%)", "variants": []}
-            valid_specs.append({"guide_id": gid, "chrom": chrom, "start": s_i, "end": e_i, "strand": strand})
+            valid_specs.append(
+                {
+                    "guide_id": gid,
+                    "chrom": chrom,
+                    "start": s_i,
+                    "end": e_i,
+                    "strand": strand,
+                    "pam_orientation": pam_orient,
+                    "pam_len": pam_len,
+                    "spacer_len": spacer_len,
+                }
+            )
             clause = f"chr{chrom}:{s_i}-{e_i}"
             if clause not in clauses:
                 clauses.append(clause)
@@ -298,12 +312,19 @@ class CellLineAndVariantClient:
                 if vid_chr and sp["chrom"] != vid_chr:
                     continue
                 if max(vs_i, sp["start"]) <= min(ve_i, sp["end"]):
-                    # Classify exact zone inside the 23-bp [spacer + PAM] window
-                    rel_pos = max(0, min(22, vs_i - sp["start"]))
-                    if sp["strand"] == "+":
-                        zone = "PAM" if rel_pos >= 20 else ("Seed" if rel_pos >= 10 else "Distal")
+                    # Classify exact zone along the 5'->3' target strand ([spacer][PAM] or [PAM][spacer])
+                    win_max = max(0, sp["end"] - sp["start"])
+                    pos_5to3 = (
+                        max(0, min(win_max, vs_i - sp["start"]))
+                        if sp["strand"] == "+"
+                        else max(0, min(win_max, sp["end"] - vs_i))
+                    )
+                    if sp["pam_orientation"] == "5prime":
+                        p_len = sp["pam_len"]
+                        zone = "PAM" if pos_5to3 < p_len else ("Seed" if pos_5to3 < p_len + 8 else "Distal")
                     else:
-                        zone = "PAM" if rel_pos <= 2 else ("Seed" if rel_pos <= 12 else "Distal")
+                        s_len = sp["spacer_len"]
+                        zone = "PAM" if pos_5to3 >= s_len else ("Seed" if pos_5to3 >= s_len - 10 else "Distal")
 
                     entry = out[sp["guide_id"]]
                     v_label = f"{rsid} (MAF {af_pct}% in {zone})"
