@@ -7,6 +7,18 @@
   },
   "rewrites": [
     {
+      "source": "/api/health",
+      "destination": "/api/index?__route=health"
+    },
+    {
+      "source": "/api/check",
+      "destination": "/api/index?__route=check"
+    },
+    {
+      "source": "/api/snp-check",
+      "destination": "/api/index?__route=snp-check"
+    },
+    {
       "source": "/(.*)",
       "destination": "/api/index"
     }

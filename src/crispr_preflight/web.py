@@ -1054,7 +1054,7 @@ async function runCheck(ev, updateUrl = true) {
   const timerHandle = setInterval(renderLoadingMsg, 150);
 
   try {
-    const params = new URLSearchParams({ gene });
+    const params = new URLSearchParams({ _route: 'check', gene });
     if (tissue) params.set('tissue', tissue);
     if (cell) params.set('cell_line', cell);
     const resp = await fetch(`/api/check?${params.toString()}`, { cache: 'no-store' });
@@ -1127,7 +1127,7 @@ async function triggerAsyncSnpCheck() {
 
   // Query in batches of up to 20 guides non-blockingly after report render
   try {
-    const resp = await fetch('/api/snp-check', {
+    const resp = await fetch('/api/snp-check?_route=snp-check', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ specs: specs.slice(0, 20) })
@@ -1617,7 +1617,7 @@ async function runBatchTriage() {
       const idx = cursor++;
       const row = BATCH_ROWS[idx];
       try {
-        const params = new URLSearchParams({ gene: row.gene });
+        const params = new URLSearchParams({ _route: 'check', gene: row.gene });
         if (tissue) params.set('tissue', tissue);
         if (cell) params.set('cell_line', cell);
         const resp = await fetch(`/api/check?${params.toString()}`, { cache: 'no-store' });
@@ -1791,7 +1791,10 @@ def make_handler(use_cache: bool = True) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:  # noqa: N802
             parsed = urllib.parse.urlparse(self.path)
-            if parsed.path == "/api/snp-check":
+            qs = urllib.parse.parse_qs(parsed.query)
+            route_hint = (qs.get("_route") or qs.get("__route") or [""])[0].strip()
+            post_path = f"/api/{route_hint}" if route_hint in ("snp-check",) else parsed.path
+            if post_path == "/api/snp-check":
                 try:
                     length = int(self.headers.get("Content-Length") or 0)
                 except ValueError:
@@ -1820,7 +1823,9 @@ def make_handler(use_cache: bool = True) -> type[BaseHTTPRequestHandler]:
 
         def do_GET(self) -> None:  # noqa: N802
             parsed = urllib.parse.urlparse(self.path)
-            path = parsed.path
+            qs = urllib.parse.parse_qs(parsed.query)
+            route_hint = (qs.get("_route") or qs.get("__route") or [""])[0].strip()
+            path = f"/api/{route_hint}" if route_hint in ("check", "snp-check", "health") else parsed.path
 
             if path in ("/", "/index.html"):
                 body = WEB_APP_HTML.encode("utf-8")
