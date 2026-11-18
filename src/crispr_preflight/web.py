@@ -438,126 +438,6 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
       </div>
 
       <div id="status-box" class="status-box"></div>
-
-      <div id="results-area" style="display:none;">
-        <!-- Gene Header & Export / Order Bar -->
-        <div class="card" style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;">
-          <div>
-            <div style="font-size:22px;font-weight:800;" id="res-title"></div>
-            <div style="font-size:13px;color:var(--muted);" id="res-sub"></div>
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:7px;align-items:center;">
-            <button type="button" class="btn-accent" onclick="exportIdtOrderCsv()">Export IDT Oligo Order (.csv)</button>
-            <button type="button" id="basket-btn" class="btn-accent" style="display:none;" onclick="exportBasketOnlyCsv()"></button>
-            <button type="button" id="basket-clear-btn" class="btn-secondary" style="display:none;" onclick="clearOrderBasket()" title="Clear pinned guides">Clear Basket</button>
-            <button type="button" class="btn-secondary" onclick="copyShareableLink(this)">Copy Share Link</button>
-            <button type="button" class="btn-secondary" onclick="downloadReport('html')">HTML (Benchling)</button>
-            <button type="button" class="btn-secondary" onclick="downloadReport('md')">Markdown</button>
-            <button type="button" class="btn-secondary" onclick="downloadReport('json')">JSON</button>
-          </div>
-        </div>
-
-        <!-- Modality Verdict -->
-        <div id="res-verdict" class="verdict"></div>
-
-        <!-- KPIs -->
-        <div class="kpi-grid">
-          <div class="kpi">
-            <div class="lbl">DepMap Fitness &amp; CCLE Genetics</div>
-            <div class="val" id="k-chronos"></div>
-            <div class="sub" id="k-chronos-sub"></div>
-            <div id="k-ccle-sub"></div>
-          </div>
-          <div class="kpi"><div class="lbl">Human LoF Constraint (gnomAD)</div><div class="val" id="k-loeuf"></div><div class="sub" id="k-pli-sub"></div></div>
-          <div class="kpi"><div class="lbl">GTEx Baseline Expression</div><div class="val" id="k-tpm"></div><div class="sub" id="k-loc"></div></div>
-          <div class="kpi"><div class="lbl">Audited Coding Isoforms</div><div class="val" id="k-iso"></div><div class="sub" id="k-exons"></div></div>
-        </div>
-
-        <!-- SVG Architecture -->
-        <div class="card">
-          <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
-            <div>
-              <h2 style="margin:0;">1. Interactive Exon, Functional Domain &amp; Epitope Map (5&prime; &rarr; 3&prime;)</h2>
-              <div style="font-size:12px;color:var(--muted);">Click any colored exon block in Track 1 to inspect its score math and exon-specific guides.</div>
-            </div>
-            <div style="font-size:12px;display:flex;gap:12px;">
-              <span><b style="color:#059669;">&#9632;</b> Recommended (&ge;75)</span>
-              <span><b style="color:#d97706;">&#9632;</b> Caution (45–74)</span>
-              <span><b style="color:#e11d48;">&#9632;</b> Avoid (&lt;45)</span>
-            </div>
-          </div>
-          <div id="svg-wrap" style="overflow-x:auto;"></div>
-          <div id="domain-legend"></div>
-          <div id="exon-inspector" class="inspector"></div>
-        </div>
-
-        <!-- Trap Warnings -->
-        <div class="card">
-          <h2>2. Biological &amp; Cell-Line Failure-Mode Alerts</h2>
-          <div id="traps-wrap"></div>
-        </div>
-
-        <!-- Exon Table -->
-        <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-            <h2 style="margin:0;">3. Coding Exon Targetability Audit</h2>
-            <button type="button" class="btn-secondary" id="filter-btn" onclick="toggleExonFilter()">Showing: All Coding Exons</button>
-          </div>
-          <div style="overflow-x:auto;">
-            <table>
-              <thead>
-                <tr>
-                  <th>Exon</th><th>Score</th><th>Tier</th><th>AA Span</th><th>Length</th><th>Isoforms</th><th>NGG Sites</th><th>NMD Status</th><th>CRISPick Coordinate (GRCh38)</th>
-                </tr>
-              </thead>
-              <tbody id="exon-tbody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Candidate SpCas9 KO & CRISPRi Guides + SNP Shield + TIDE/ICE Primers -->
-        <div class="card">
-          <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;">
-            <div>
-              <h2 style="margin:0;">4. SpCas9 sgRNA Spacers, Common SNP Shield &amp; TIDE/ICE Genotyping Primers</h2>
-              <div style="font-size:12px;color:var(--muted);">Includes U6 Golden Gate oligos (<code>BsmBI</code>/<code>BbsI</code>), paired 430–740 bp TIDE/ICE PCR primers, and background gnomAD common SNP screening (MAF &ge;1%).</div>
-            </div>
-            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-              <div class="seg-bar">
-                <button type="button" id="scope-panel" class="seg-btn active" onclick="setGuideScope('PANEL')">Top KO Panel</button>
-                <button type="button" id="scope-exon" class="seg-btn" onclick="setGuideScope('EXON')">Selected Exon KO</button>
-                <button type="button" id="scope-crispri" class="seg-btn" onclick="setGuideScope('CRISPRI')">CRISPRi Promoter (TSS)</button>
-              </div>
-              <button type="button" class="btn-secondary" onclick="copyGuidesFasta(this)">Copy FASTA</button>
-            </div>
-          </div>
-          <div class="offtarget-note">
-            <div style="max-width:740px;">
-              <strong>Before ordering oligos — 10-second genome-wide off-target check:</strong> Local rules rank on-target quality &amp; biological safety; paste your chosen 2–3 spacers into <strong>Cas-OFFinder</strong> or <strong>Broad CRISPick</strong> to verify zero 0–2 mismatch off-target sites across GRCh38.
-            </div>
-            <div style="display:flex;gap:8px;white-space:nowrap;">
-              <a href="http://www.rgenome.net/cas-offinder/" target="_blank" rel="noopener" class="btn-secondary" style="text-decoration:none;">Cas-OFFinder &nearr;</a>
-              <a href="https://portals.broadinstitute.org/gppx/crispick/public" target="_blank" rel="noopener" class="btn-secondary" style="text-decoration:none;">Broad CRISPick &nearr;</a>
-            </div>
-          </div>
-          <div style="overflow-x:auto;" id="guides-wrap"></div>
-        </div>
-
-        <!-- Paralogs & Validation -->
-        <div class="two-col">
-          <div class="card">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px;">
-              <h2 style="margin:0;">5. Human Paralog Buffering Check</h2>
-              <span style="font-size:11.5px;color:var(--muted);">Click a paralog to pin partner guides for Dual-KO</span>
-            </div>
-            <div id="paralogs-wrap"></div>
-          </div>
-          <div class="card">
-            <h2>6. Wet-Lab Validation &amp; Orthogonal Chemical Tools</h2>
-            <div id="val-wrap"></div>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- ==================== MODE 2: BATCH HIT-LIST TRIAGE ==================== -->
@@ -566,7 +446,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
         <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;">
           <div>
             <h2 style="margin:0;font-size:18px;">Batch Hit-List Triage (Paste 5–30 Screen or RNA-seq Candidate Genes)</h2>
-            <div style="font-size:13px;color:var(--muted);">Compares modality risk, DepMap Chronos fitness, CCLE endogenous mutations/amplifications, paralog traps, and top safe exons side-by-side.</div>
+            <div style="font-size:13px;color:var(--muted);">Compares modality risk, DepMap Chronos fitness, CCLE endogenous mutations/amplifications, paralog traps, and top safe exons side-by-side — with full per-gene reports right below.</div>
           </div>
           <button type="button" class="btn-secondary" onclick="loadDemoBatch()">Load Demo Screen Hits (6 Genes)</button>
         </div>
@@ -621,8 +501,11 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
       </div>
 
       <div id="batch-results-card" class="card" style="display:none;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <h2 style="margin:0;">Hit-List Comparison Matrix</h2>
+        <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;">
+          <div>
+            <h2 style="margin:0;">Hit-List Comparison Matrix</h2>
+            <div style="font-size:12px;color:var(--muted);">Click any gene row to inspect its full interactive exon map, sgRNAs &amp; PCR primers right below on this page.</div>
+          </div>
           <button type="button" class="btn-accent" onclick="exportBatchCsv()">Export Triage Summary (.csv)</button>
         </div>
         <div style="overflow-x:auto;">
@@ -637,11 +520,134 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
                 <th>Tissue TPM</th>
                 <th>Top Paralog</th>
                 <th>Best Exon &amp; Top Spacer</th>
-                <th>Inspect</th>
+                <th>Full Report</th>
               </tr>
             </thead>
             <tbody id="batch-tbody"></tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SHARED FULL INTERACTIVE GENE REPORT ==================== -->
+    <div id="results-area" style="display:none;">
+      <div id="batch-report-nav" class="card" style="display:none;background:#f0fdfa;border-color:#99f6e4;padding:12px 18px;"></div>
+
+      <!-- Gene Header & Export / Order Bar -->
+      <div class="card" style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;">
+        <div>
+          <div style="font-size:22px;font-weight:800;" id="res-title"></div>
+          <div style="font-size:13px;color:var(--muted);" id="res-sub"></div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:7px;align-items:center;">
+          <button type="button" class="btn-accent" onclick="exportIdtOrderCsv()">Export IDT Oligo Order (.csv)</button>
+          <button type="button" id="basket-btn" class="btn-accent" style="display:none;" onclick="exportBasketOnlyCsv()"></button>
+          <button type="button" id="basket-clear-btn" class="btn-secondary" style="display:none;" onclick="clearOrderBasket()" title="Clear pinned guides">Clear Basket</button>
+          <button type="button" class="btn-secondary" onclick="copyShareableLink(this)">Copy Share Link</button>
+          <button type="button" class="btn-secondary" onclick="downloadReport('html')">HTML (Benchling)</button>
+          <button type="button" class="btn-secondary" onclick="downloadReport('md')">Markdown</button>
+          <button type="button" class="btn-secondary" onclick="downloadReport('json')">JSON</button>
+        </div>
+      </div>
+
+      <!-- Modality Verdict -->
+      <div id="res-verdict" class="verdict"></div>
+
+      <!-- KPIs -->
+      <div class="kpi-grid">
+        <div class="kpi">
+          <div class="lbl">DepMap Fitness &amp; CCLE Genetics</div>
+          <div class="val" id="k-chronos"></div>
+          <div class="sub" id="k-chronos-sub"></div>
+          <div id="k-ccle-sub"></div>
+        </div>
+        <div class="kpi"><div class="lbl">Human LoF Constraint (gnomAD)</div><div class="val" id="k-loeuf"></div><div class="sub" id="k-pli-sub"></div></div>
+        <div class="kpi"><div class="lbl">GTEx Baseline Expression</div><div class="val" id="k-tpm"></div><div class="sub" id="k-loc"></div></div>
+        <div class="kpi"><div class="lbl">Audited Coding Isoforms</div><div class="val" id="k-iso"></div><div class="sub" id="k-exons"></div></div>
+      </div>
+
+      <!-- SVG Architecture -->
+      <div class="card">
+        <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
+          <div>
+            <h2 style="margin:0;">1. Interactive Exon, Functional Domain &amp; Epitope Map (5&prime; &rarr; 3&prime;)</h2>
+            <div style="font-size:12px;color:var(--muted);">Click any colored exon block in Track 1 to inspect its score math and exon-specific guides.</div>
+          </div>
+          <div style="font-size:12px;display:flex;gap:12px;">
+            <span><b style="color:#059669;">&#9632;</b> Recommended (&ge;75)</span>
+            <span><b style="color:#d97706;">&#9632;</b> Caution (45–74)</span>
+            <span><b style="color:#e11d48;">&#9632;</b> Avoid (&lt;45)</span>
+          </div>
+        </div>
+        <div id="svg-wrap" style="overflow-x:auto;"></div>
+        <div id="domain-legend"></div>
+        <div id="exon-inspector" class="inspector"></div>
+      </div>
+
+      <!-- Trap Warnings -->
+      <div class="card">
+        <h2>2. Biological &amp; Cell-Line Failure-Mode Alerts</h2>
+        <div id="traps-wrap"></div>
+      </div>
+
+      <!-- Exon Table -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <h2 style="margin:0;">3. Coding Exon Targetability Audit</h2>
+          <button type="button" class="btn-secondary" id="filter-btn" onclick="toggleExonFilter()">Showing: All Coding Exons</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Exon</th><th>Score</th><th>Tier</th><th>AA Span</th><th>Length</th><th>Isoforms</th><th>NGG Sites</th><th>NMD Status</th><th>CRISPick Coordinate (GRCh38)</th>
+              </tr>
+            </thead>
+            <tbody id="exon-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Candidate SpCas9 KO & CRISPRi Guides + SNP Shield + TIDE/ICE Primers -->
+      <div class="card">
+        <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;">
+          <div>
+            <h2 style="margin:0;">4. SpCas9 sgRNA Spacers, Common SNP Shield &amp; TIDE/ICE Genotyping Primers</h2>
+            <div style="font-size:12px;color:var(--muted);">Includes U6 Golden Gate oligos (<code>BsmBI</code>/<code>BbsI</code>), paired 430–740 bp TIDE/ICE PCR primers, and background gnomAD common SNP screening (MAF &ge;1%).</div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            <div class="seg-bar">
+              <button type="button" id="scope-panel" class="seg-btn active" onclick="setGuideScope('PANEL')">Top KO Panel</button>
+              <button type="button" id="scope-exon" class="seg-btn" onclick="setGuideScope('EXON')">Selected Exon KO</button>
+              <button type="button" id="scope-crispri" class="seg-btn" onclick="setGuideScope('CRISPRI')">CRISPRi Promoter (TSS)</button>
+            </div>
+            <button type="button" class="btn-secondary" onclick="copyGuidesFasta(this)">Copy FASTA</button>
+          </div>
+        </div>
+        <div class="offtarget-note">
+          <div style="max-width:740px;">
+            <strong>Before ordering oligos — 10-second genome-wide off-target check:</strong> Local rules rank on-target quality &amp; biological safety; paste your chosen 2–3 spacers into <strong>Cas-OFFinder</strong> or <strong>Broad CRISPick</strong> to verify zero 0–2 mismatch off-target sites across GRCh38.
+          </div>
+          <div style="display:flex;gap:8px;white-space:nowrap;">
+            <a href="http://www.rgenome.net/cas-offinder/" target="_blank" rel="noopener" class="btn-secondary" style="text-decoration:none;">Cas-OFFinder &nearr;</a>
+            <a href="https://portals.broadinstitute.org/gppx/crispick/public" target="_blank" rel="noopener" class="btn-secondary" style="text-decoration:none;">Broad CRISPick &nearr;</a>
+          </div>
+        </div>
+        <div style="overflow-x:auto;" id="guides-wrap"></div>
+      </div>
+
+      <!-- Paralogs & Validation -->
+      <div class="two-col">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px;">
+            <h2 style="margin:0;">5. Human Paralog Buffering Check</h2>
+            <span style="font-size:11.5px;color:var(--muted);">Click a paralog to pin partner guides for Dual-KO</span>
+          </div>
+          <div id="paralogs-wrap"></div>
+        </div>
+        <div class="card">
+          <h2>6. Wet-Lab Validation &amp; Orthogonal Chemical Tools</h2>
+          <div id="val-wrap"></div>
         </div>
       </div>
     </div>
@@ -653,7 +659,9 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
   </div>
 
 <script>
+let APP_MODE = 'SINGLE'; // 'SINGLE' or 'BATCH'
 let CURRENT = null;
+let SINGLE_PAYLOAD = null;
 let SELECTED_EXON = null;
 let ONLY_REC = false;
 let GUIDE_SCOPE = 'PANEL'; // 'PANEL', 'EXON', or 'CRISPRI'
@@ -662,6 +670,7 @@ let ACTIVE_SNP_REQ = 0;
 let SNP_CACHE = {}; // guide_id -> { status, summary, variants }
 let ORDER_BASKET = []; // pinned guides across genes (e.g. target + paralog)
 let BATCH_ROWS = []; // [{ gene, payload, error }]
+let SELECTED_BATCH_IDX = -1;
 
 const CELL_LINE_CATALOG = [
   { group: 'Common Lab Workhorses', name: 'HEK293T', sub: 'Embryonic Kidney' },
@@ -852,11 +861,29 @@ function triggerCsvDownload(filename, lines) {
 }
 
 function switchAppMode(mode) {
+  APP_MODE = mode;
   const isSingle = mode === 'SINGLE';
   document.getElementById('single-mode-view').style.display = isSingle ? 'block' : 'none';
   document.getElementById('batch-mode-view').style.display = isSingle ? 'none' : 'block';
   document.getElementById('tab-single').classList.toggle('active', isSingle);
   document.getElementById('tab-batch').classList.toggle('active', !isSingle);
+
+  if (isSingle) {
+    document.getElementById('batch-report-nav').style.display = 'none';
+    if (SINGLE_PAYLOAD) {
+      applyLoadedPayload(SINGLE_PAYLOAD);
+    } else {
+      document.getElementById('results-area').style.display = 'none';
+    }
+  } else {
+    const selRow = BATCH_ROWS[SELECTED_BATCH_IDX];
+    if (selRow && selRow.payload) {
+      applyLoadedPayload(selRow.payload);
+      renderBatchReportNav();
+    } else {
+      document.getElementById('results-area').style.display = 'none';
+    }
+  }
 }
 
 function flashCopied(btn, msg) {
@@ -1006,13 +1033,45 @@ function exportBasketOnlyCsv() {
   triggerCsvDownload(`${genes}_dual_IDT_order.csv`, buildIdtRowsFromItems(ORDER_BASKET));
 }
 
-function inspectParalogByIndex(idx) {
+async function inspectParalogByIndex(idx) {
   if (!CURRENT) return;
   const p = (CURRENT.report.paralogs || [])[idx];
   if (!p) return;
+  if (APP_MODE === 'BATCH') {
+    const existingIdx = BATCH_ROWS.findIndex(r => r.gene.toUpperCase() === p.gene_symbol.toUpperCase());
+    if (existingIdx >= 0 && BATCH_ROWS[existingIdx].payload) {
+      openBatchRow(existingIdx, true);
+      return;
+    }
+    const tissue = document.getElementById('batch-tissue').value.trim();
+    const cell = document.getElementById('batch-cell').value.trim();
+    const newIdx = BATCH_ROWS.length;
+    BATCH_ROWS.push({ gene: p.gene_symbol.toUpperCase(), payload: null, error: null, pending: true });
+    renderBatchTable();
+    try {
+      const params = new URLSearchParams({ _route: 'check', gene: p.gene_symbol });
+      if (tissue) params.set('tissue', tissue);
+      if (cell) params.set('cell_line', cell);
+      const resp = await fetch(`/api/check?${params.toString()}`, { cache: 'no-store' });
+      const data = await resp.json();
+      if (!resp.ok || data.error) {
+        BATCH_ROWS[newIdx].error = data.error || `HTTP ${resp.status}`;
+      } else {
+        BATCH_ROWS[newIdx].payload = data;
+      }
+    } catch (e) {
+      BATCH_ROWS[newIdx].error = e.message;
+    } finally {
+      BATCH_ROWS[newIdx].pending = false;
+      renderBatchTable();
+      if (BATCH_ROWS[newIdx].payload) {
+        openBatchRow(newIdx, true);
+      }
+    }
+    return;
+  }
   const tissue = document.getElementById('tissue-input').value.trim();
   const cell = document.getElementById('cell-input').value.trim();
-  switchAppMode('SINGLE');
   quickRun(p.gene_symbol, tissue, cell);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -1063,6 +1122,7 @@ async function runCheck(ev, updateUrl = true) {
     if (!resp.ok || payload.error) {
       throw new Error(payload.error || `HTTP ${resp.status}`);
     }
+    SINGLE_PAYLOAD = payload;
     applyLoadedPayload(payload);
     sbox.className = 'status-box';
     sbox.style.display = 'none';
@@ -1601,6 +1661,8 @@ async function runBatchTriage() {
   document.getElementById('batch-results-card').style.display = 'block';
 
   BATCH_ROWS = tokens.map(g => ({ gene: g, payload: null, error: null, pending: true }));
+  SELECTED_BATCH_IDX = -1;
+  document.getElementById('results-area').style.display = 'none';
   renderBatchTable();
 
   let done = 0;
@@ -1608,7 +1670,7 @@ async function runBatchTriage() {
   const updateProg = () => {
     prog.textContent = done < tokens.length
       ? `Completed ${done}/${tokens.length} genes (running 3 parallel checks)...`
-      : `Finished all ${tokens.length} genes! Click "Open Report" on any row for full exon map & oligos.`;
+      : `Finished all ${tokens.length} genes! Click any gene row in the matrix below to view its full report right underneath.`;
   };
   updateProg();
 
@@ -1633,7 +1695,14 @@ async function runBatchTriage() {
         row.pending = false;
         done++;
         updateProg();
+        if (APP_MODE === 'BATCH' && SELECTED_BATCH_IDX === -1 && row.payload) {
+          SELECTED_BATCH_IDX = idx;
+          applyLoadedPayload(row.payload);
+        }
         renderBatchTable();
+        if (APP_MODE === 'BATCH' && SELECTED_BATCH_IDX >= 0) {
+          renderBatchReportNav();
+        }
       }
     }
   }
@@ -1688,7 +1757,12 @@ function renderBatchTable() {
       ? `E${bestEx.exon_number} (${bestEx.priority_score}/100)${topG ? `<br/><code>${esc(topG.spacer_20nt)}</code>` : ''}`
       : '—';
 
-    return `<tr>
+    const isSel = idx === SELECTED_BATCH_IDX;
+    const btnHtml = isSel
+      ? `<button type="button" class="btn-primary" style="height:auto;padding:5px 10px;font-size:12px;" onclick="event.stopPropagation();openBatchRow(${idx}, true)">&#10003; Viewing Below</button>`
+      : `<button type="button" class="btn-accent" onclick="event.stopPropagation();openBatchRow(${idx}, true)">View Below &darr;</button>`;
+
+    return `<tr class="clickable-row ${isSel ? 'selected-row' : ''}" onclick="openBatchRow(${idx}, true)">
       <td><strong>${esc(r.gene_symbol)}</strong><div style="font-size:11px;color:var(--muted);">${esc(r.ensembl_id)}</div></td>
       <td><span class="pill pill-${riskCls}">${esc(r.modality.risk_level)}</span></td>
       <td><strong>${esc(r.modality.primary_modality)}</strong></td>
@@ -1697,23 +1771,64 @@ function renderBatchTable() {
       <td style="white-space:nowrap;">${esc(tpmTxt)}</td>
       <td>${parTxt}</td>
       <td>${guideTxt}</td>
-      <td><button type="button" class="btn-accent" onclick="openBatchRow(${idx})">Open Report &rarr;</button></td>
+      <td style="white-space:nowrap;">${btnHtml}</td>
     </tr>`;
   }).join('');
 }
 
-function openBatchRow(idx) {
+function renderBatchReportNav() {
+  const nav = document.getElementById('batch-report-nav');
+  if (APP_MODE !== 'BATCH' || SELECTED_BATCH_IDX < 0 || !BATCH_ROWS[SELECTED_BATCH_IDX] || !BATCH_ROWS[SELECTED_BATCH_IDX].payload) {
+    nav.style.display = 'none';
+    return;
+  }
+  const readyIndices = BATCH_ROWS.map((r, i) => (r.payload ? i : -1)).filter(i => i >= 0);
+  const posInReady = readyIndices.indexOf(SELECTED_BATCH_IDX);
+  const prevIdx = posInReady > 0 ? readyIndices[posInReady - 1] : -1;
+  const nextIdx = (posInReady >= 0 && posInReady < readyIndices.length - 1) ? readyIndices[posInReady + 1] : -1;
+
+  const chipsHtml = readyIndices.map(i => {
+    const sym = BATCH_ROWS[i].payload.report.gene_symbol;
+    const active = i === SELECTED_BATCH_IDX;
+    const style = active
+      ? 'background:#0f766e;color:#ffffff;border-color:#0f766e;'
+      : 'background:#ffffff;color:#0f766e;border-color:#5eead4;';
+    return `<button type="button" class="chip" style="${style}" onclick="openBatchRow(${i}, false)">${esc(sym)}</button>`;
+  }).join('');
+
+  nav.style.display = 'block';
+  nav.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
+        <span style="font-size:12.5px;font-weight:800;color:#0f766e;margin-right:4px;">Detailed Report (${posInReady + 1}/${readyIndices.length}):</span>
+        ${chipsHtml}
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button type="button" class="btn-secondary" ${prevIdx < 0 ? 'disabled style="opacity:0.45;"' : `onclick="openBatchRow(${prevIdx}, false)"`}>&larr; Prev Hit</button>
+        <button type="button" class="btn-secondary" ${nextIdx < 0 ? 'disabled style="opacity:0.45;"' : `onclick="openBatchRow(${nextIdx}, false)"`}>Next Hit &rarr;</button>
+        <button type="button" class="btn-secondary" onclick="scrollToBatchMatrix()">&uarr; Back to Matrix</button>
+      </div>
+    </div>`;
+}
+
+function scrollToBatchMatrix() {
+  const el = document.getElementById('batch-results-card');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function openBatchRow(idx, shouldScroll = true) {
   const row = BATCH_ROWS[idx];
   if (!row || !row.payload) return;
+  SELECTED_BATCH_IDX = idx;
   const tissue = document.getElementById('batch-tissue').value.trim();
   const cell = document.getElementById('batch-cell').value.trim();
-  document.getElementById('gene-input').value = row.payload.report.gene_symbol;
-  document.getElementById('tissue-input').value = tissue;
-  setCellValue('single', cell);
   syncUrlPermalink(row.payload.report.gene_symbol, tissue, cell);
-  switchAppMode('SINGLE');
+  renderBatchTable();
   applyLoadedPayload(row.payload);
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  renderBatchReportNav();
+  if (shouldScroll) {
+    document.getElementById('results-area').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 function exportBatchCsv() {
