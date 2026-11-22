@@ -107,13 +107,13 @@ def _build_architecture_svg(report: PreflightReport) -> str:
 
     # Track 3: Antibody Epitope Safe vs Avoid Windows
     svg.append(
-        f'<text x="{pad_x}" y="{t3_label_y}" font-size="12" font-weight="600" fill="#334155">3. Western Antibody Epitope Map (Teal = Safe Constitutive Epitope | Coral = Re-initiation / Skippable Exon Risk)</text>'
+        f'<text x="{pad_x}" y="{t3_label_y}" font-size="12" font-weight="600" fill="#1e3a8a">3. Western Antibody Epitope Map (Sky Blue = Safe Constitutive Epitope | Coral = Re-initiation / Skippable Exon Risk)</text>'
     )
-    svg.append(f'<rect x="{pad_x}" y="{t3_rect_y}" width="{usable_w}" height="18" rx="4" fill="#e2e8f0"/>')
+    svg.append(f'<rect x="{pad_x}" y="{t3_rect_y}" width="{usable_w}" height="18" rx="4" fill="#eef6ff"/>')
     for win in report.validation.epitope_windows:
         wx1 = aa_to_x(win.aa_start)
         wx2 = max(wx1 + 4.0, aa_to_x(win.aa_end))
-        wfill = "#0d9488" if win.status == "SAFE" else "#f43f5e"
+        wfill = "#38bdf8" if win.status == "SAFE" else "#fb7185"
         wtip = html.escape(f"{win.status} (aa {win.aa_start}-{win.aa_end}): {win.reason}")
         svg.append(
             f'<g><title>{wtip}</title><rect x="{wx1:.1f}" y="{t3_rect_y}" width="{(wx2 - wx1):.1f}" height="18" rx="3" fill="{wfill}" fill-opacity="0.82"/></g>'
@@ -334,33 +334,33 @@ def render_html(report: PreflightReport) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>CRISPR Preflight — {esc(report.gene_symbol)}</title>
 <style>
-  body {{ font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color:#0f172a; background:#f8fafc; margin:0; padding:24px; line-height:1.5; }}
-  .container {{ max-width: 1120px; margin: 0 auto; background:#ffffff; border-radius:14px; padding:28px 32px; box-shadow:0 4px 20px rgba(15,23,42,0.06); }}
-  h1 {{ margin:0 0 6px 0; font-size:24px; }}
-  h2 {{ margin-top:28px; font-size:18px; border-bottom:1px solid #e2e8f0; padding-bottom:6px; }}
+  body {{ font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color:#0f172a; background:linear-gradient(180deg, #e6f2ff 0%, #f2f8ff 45%, #f8fbff 100%); margin:0; padding:24px; line-height:1.5; }}
+  .container {{ max-width: 1120px; margin: 0 auto; background:#ffffff; border:1px solid #d6e6ff; border-radius:14px; padding:28px 32px; box-shadow:0 4px 20px rgba(59,130,246,0.07); }}
+  h1 {{ margin:0 0 6px 0; font-size:24px; color:#1e3a8a; }}
+  h2 {{ margin-top:28px; font-size:18px; color:#1e3a8a; border-bottom:1px solid #dbeafe; padding-bottom:6px; }}
   .sub {{ color:#475569; font-size:14px; margin-bottom:18px; }}
   .verdict {{ background:{risk_bg}; border:1px solid {risk_border}; color:{risk_fg}; border-radius:10px; padding:16px 20px; margin-bottom:20px; }}
   .kpi-grid {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap:12px; margin-bottom:22px; }}
-  .kpi {{ background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; }}
-  .kpi .lbl {{ font-size:12px; color:#64748b; text-transform:uppercase; letter-spacing:0.04em; }}
-  .kpi .val {{ font-size:16px; font-weight:700; margin-top:4px; color:#0f172a; }}
-  .trap-card {{ border-radius:8px; padding:12px 16px; margin-bottom:10px; border-left:4px solid #94a3b8; background:#f8fafc; }}
+  .kpi {{ background:#f5f9ff; border:1px solid #dbeafe; border-radius:8px; padding:12px 14px; }}
+  .kpi .lbl {{ font-size:12px; color:#526580; text-transform:uppercase; letter-spacing:0.04em; }}
+  .kpi .val {{ font-size:16px; font-weight:700; margin-top:4px; color:#1e3a8a; }}
+  .trap-card {{ border-radius:8px; padding:12px 16px; margin-bottom:10px; border-left:4px solid #93c5fd; background:#f8fbff; }}
   .trap-card p {{ margin:4px 0; font-size:13.5px; }}
-  .warn-high {{ border-left-color:#ef4444; background:#fef2f2; }}
+  .warn-high {{ border-left-color:#f43f5e; background:#fff5f7; }}
   .warn-mod {{ border-left-color:#f59e0b; background:#fffbeb; }}
-  .warn-info {{ border-left-color:#3b82f6; background:#eff6ff; }}
+  .warn-info {{ border-left-color:#38bdf8; background:#f0f9ff; }}
   .badge {{ font-size:11px; font-weight:700; padding:2px 6px; border-radius:4px; background:rgba(0,0,0,0.08); }}
   table {{ width:100%; border-collapse:collapse; font-size:13px; margin-top:10px; }}
-  th, td {{ text-align:left; padding:9px 10px; border-bottom:1px solid #e2e8f0; }}
-  th {{ background:#f1f5f9; font-weight:600; color:#334155; }}
-  .breakdown-row td {{ background:#fcfcfd; padding:4px 18px 10px 28px; color:#475569; font-size:12px; }}
+  th, td {{ text-align:left; padding:9px 10px; border-bottom:1px solid #dbeafe; }}
+  th {{ background:#f2f7ff; font-weight:600; color:#1e3a8a; }}
+  .breakdown-row td {{ background:#fafcff; padding:4px 18px 10px 28px; color:#475569; font-size:12px; }}
   .bd-list {{ margin:0; padding-left:16px; }}
   .pill {{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; }}
   .tier-rec {{ background:#d1fae5; color:#065f46; }}
   .tier-caut {{ background:#fef3c7; color:#92400e; }}
   .tier-avoid {{ background:#fee2e2; color:#991b1b; }}
-  .copy-btn {{ border:1px solid #cbd5e1; background:#ffffff; border-radius:5px; padding:2px 7px; font-size:11px; cursor:pointer; }}
-  .copy-btn:hover {{ background:#f1f5f9; }}
+  .copy-btn {{ border:1px solid #bfdbfe; background:#eff6ff; color:#1d4ed8; border-radius:5px; padding:2px 7px; font-size:11px; cursor:pointer; }}
+  .copy-btn:hover {{ background:#dbeafe; }}
   .footer {{ margin-top:28px; font-size:12px; color:#64748b; border-top:1px solid #e2e8f0; padding-top:12px; }}
 </style>
 </head>

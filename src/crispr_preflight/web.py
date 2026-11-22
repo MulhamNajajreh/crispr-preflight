@@ -33,28 +33,30 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
 <title>CRISPR Preflight — Pre-Experiment Target &amp; Knockout Flight Check</title>
 <style>
   :root {
-    --bg: #f8fafc;
+    --bg: #f0f7ff;
     --card: #ffffff;
     --fg: #0f172a;
-    --muted: #64748b;
-    --border: #e2e8f0;
-    --primary: #0f766e;
-    --primary-hover: #115e59;
+    --muted: #526580;
+    --border: #d6e6ff;
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
     --primary-fg: #ffffff;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: var(--bg);
+    background: linear-gradient(180deg, #e6f2ff 0%, #f2f8ff 42%, #f8fbff 100%);
+    background-attachment: fixed;
     color: var(--fg);
     line-height: 1.5;
   }
   .topbar {
-    background: #0f172a;
-    color: #f8fafc;
+    background: linear-gradient(135deg, #dbeafe 0%, #e0f2fe 52%, #e8ecff 100%);
+    color: #1e3a8a;
     padding: 16px 24px;
-    border-bottom: 1px solid #1e293b;
+    border-bottom: 1px solid #bfdbfe;
+    box-shadow: 0 2px 12px rgba(59, 130, 246, 0.08);
   }
   .topbar-inner {
     max-width: 1180px;
@@ -65,30 +67,33 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
     justify-content: space-between;
     gap: 14px;
   }
-  .brand { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
-  .brand span { color: #2dd4bf; }
-  .tagline { font-size: 12.5px; color: #94a3b8; }
+  .brand { font-size: 21px; font-weight: 800; letter-spacing: -0.02em; color: #1e3a8a; }
+  .brand span { color: #2563eb; }
+  .tagline { font-size: 12.5px; color: #475569; font-weight: 500; }
   .mode-tabs {
     display: inline-flex;
-    background: #1e293b;
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid #bfdbfe;
     padding: 4px;
-    border-radius: 10px;
+    border-radius: 11px;
     gap: 4px;
   }
   .mode-tab {
     border: none;
     background: transparent;
-    color: #cbd5e1;
+    color: #334155;
     font-size: 13px;
     font-weight: 700;
     padding: 7px 14px;
-    border-radius: 7px;
+    border-radius: 8px;
     cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
   }
-  .mode-tab:hover { color: #ffffff; }
+  .mode-tab:hover { color: #1d4ed8; background: #eff6ff; }
   .mode-tab.active {
-    background: #0f766e;
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
     color: #ffffff;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
   }
   .wrap { max-width: 1180px; margin: 22px auto; padding: 0 20px 48px; }
   .card {
@@ -96,7 +101,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
     border: 1px solid var(--border);
     border-radius: 14px;
     padding: 20px 24px;
-    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+    box-shadow: 0 4px 18px rgba(59, 130, 246, 0.06);
     margin-bottom: 18px;
   }
   .search-grid {
@@ -135,22 +140,24 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
     padding: 9px 12px;
     font-size: 14px;
     font-family: inherit;
-    border: 1px solid #cbd5e1;
+    border: 1px solid #bfdbfe;
     border-radius: 9px;
-    background: #ffffff;
+    background: #fcfdff;
     color: var(--fg);
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
   }
   input:not([type="checkbox"]), select {
     height: 40px;
   }
   input:hover, select:hover, textarea:hover {
-    border-color: #94a3b8;
+    border-color: #93c5fd;
+    background: #ffffff;
   }
   input:focus, select:focus, textarea:focus {
     outline: none;
-    border-color: #0d9488;
-    box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.18);
+    border-color: #3b82f6;
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.24);
   }
   select.nice-select {
     appearance: none;
@@ -241,8 +248,8 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
     color: #0f172a;
   }
   .combo-opt:hover, .combo-opt.selected {
-    background: #f0fdfa;
-    color: #0f766e;
+    background: #eff6ff;
+    color: #1d4ed8;
   }
   .combo-opt-sub {
     font-size: 11.5px;
@@ -254,44 +261,46 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
     height: 40px;
     font-size: 14px;
     font-weight: 700;
-    background: var(--primary);
+    background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 55%, #2563eb 100%);
     color: var(--primary-fg);
     border: none;
     border-radius: 9px;
     cursor: pointer;
     white-space: nowrap;
+    box-shadow: 0 3px 10px rgba(59, 130, 246, 0.24);
+    transition: filter 0.15s ease, transform 0.1s ease;
   }
-  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-primary:hover { filter: brightness(1.05); }
   .btn-primary:disabled { opacity: 0.6; cursor: wait; }
   .btn-secondary {
     padding: 6px 11px;
     font-size: 12px;
     font-weight: 600;
-    background: #f1f5f9;
+    background: #f5f9ff;
     color: #334155;
-    border: 1px solid #cbd5e1;
+    border: 1px solid #cfe2ff;
     border-radius: 7px;
     cursor: pointer;
     white-space: nowrap;
   }
-  .btn-secondary:hover { background: #e2e8f0; }
+  .btn-secondary:hover { background: #e0f2fe; border-color: #93c5fd; color: #1e3a8a; }
   .btn-accent {
     padding: 6px 12px;
     font-size: 12px;
     font-weight: 700;
-    background: #f0fdfa;
-    color: #0f766e;
-    border: 1px solid #5eead4;
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #93c5fd;
     border-radius: 7px;
     cursor: pointer;
     white-space: nowrap;
   }
-  .btn-accent:hover { background: #ccfbf1; }
+  .btn-accent:hover { background: #dbeafe; }
   .seg-bar {
     display: inline-flex;
     flex-wrap: wrap;
-    background: #f1f5f9;
-    border: 1px solid #cbd5e1;
+    background: #eef6ff;
+    border: 1px solid #bfdbfe;
     border-radius: 9px;
     padding: 3px;
     gap: 3px;
@@ -308,22 +317,23 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
   }
   .seg-btn.active {
     background: #ffffff;
-    color: #0f172a;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+    color: #1d4ed8;
+    box-shadow: 0 1px 4px rgba(37, 99, 235, 0.14);
   }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
   .chip-lbl { font-size: 12px; color: var(--muted); font-weight: 600; }
   .chip {
     font-size: 12px;
-    padding: 4px 10px;
+    padding: 4px 11px;
     border-radius: 999px;
-    background: #f1f5f9;
-    border: 1px solid #cbd5e1;
-    color: #334155;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1e40af;
     cursor: pointer;
     font-weight: 600;
+    transition: background 0.15s ease, border-color 0.15s ease;
   }
-  .chip:hover { background: #ccfbf1; border-color: #5eead4; color: #0f766e; }
+  .chip:hover { background: #dbeafe; border-color: #60a5fa; color: #1d4ed8; }
   .status-box {
     padding: 15px 18px;
     border-radius: 10px;
@@ -331,35 +341,35 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
     margin-bottom: 18px;
     display: none;
   }
-  .status-loading { display: block; background: #f0fdfa; border: 1px solid #99f6e4; color: #0f766e; }
+  .status-loading { display: block; background: #eff6ff; border: 1px solid #93c5fd; color: #1d4ed8; }
   .status-error { display: block; background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
   .verdict { border-radius: 12px; padding: 18px 22px; margin-bottom: 18px; border: 1px solid var(--border); }
-  .verdict-HIGH { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+  .verdict-HIGH { background: #fff1f2; border-color: #fecdd3; color: #9f1239; }
   .verdict-MODERATE { background: #fffbeb; border-color: #fde68a; color: #92400e; }
   .verdict-LOW { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
   .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 18px; }
-  .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .kpi { background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: 0 2px 10px rgba(59, 130, 246, 0.04); }
   .kpi .lbl { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; }
-  .kpi .val { font-size: 18px; font-weight: 800; margin-top: 4px; }
+  .kpi .val { font-size: 18px; font-weight: 800; margin-top: 4px; color: #1e3a8a; }
   .kpi .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  h2 { font-size: 16px; margin: 0 0 12px 0; }
+  h2 { font-size: 16px; margin: 0 0 12px 0; color: #1e3a8a; }
   .inspector {
-    background: #f8fafc;
-    border: 1px solid #cbd5e1;
+    background: #f5f9ff;
+    border: 1px solid #bfdbfe;
     border-radius: 10px;
     padding: 14px 16px;
     margin-top: 12px;
   }
-  .trap { border-radius: 9px; padding: 12px 16px; margin-bottom: 10px; background: #f8fafc; border: 1px solid var(--border); border-left-width: 4px; font-size: 13px; }
-  .trap-HIGH { border-left-color: #ef4444; background: #fff5f5; }
+  .trap { border-radius: 9px; padding: 12px 16px; margin-bottom: 10px; background: #f8fbff; border: 1px solid var(--border); border-left-width: 4px; font-size: 13px; }
+  .trap-HIGH { border-left-color: #f43f5e; background: #fff5f7; }
   .trap-MODERATE { border-left-color: #f59e0b; background: #fffdf2; }
-  .trap-INFO { border-left-color: #3b82f6; background: #f5f9ff; }
+  .trap-INFO { border-left-color: #38bdf8; background: #f0f9ff; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  th { font-size: 12px; color: var(--muted); background: #f8fafc; font-weight: 700; }
+  th { font-size: 12px; color: #3b5273; background: #f2f7ff; font-weight: 700; }
   tr.clickable-row { cursor: pointer; }
-  tr.clickable-row:hover { background: #f1f5f9; }
-  tr.selected-row { background: #f0fdfa; }
+  tr.clickable-row:hover { background: #f5f9ff; }
+  tr.selected-row { background: #e8f2ff; }
   .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
   .pill-RECOMMENDED { background: #d1fae5; color: #065f46; }
   .pill-CAUTION { background: #fef3c7; color: #92400e; }
@@ -588,7 +598,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
 
     <!-- ==================== SHARED FULL INTERACTIVE GENE REPORT ==================== -->
     <div id="results-area" style="display:none;">
-      <div id="batch-report-nav" class="card" style="display:none;background:#f0fdfa;border-color:#99f6e4;padding:12px 18px;"></div>
+      <div id="batch-report-nav" class="card" style="display:none;background:#eff6ff;border-color:#93c5fd;padding:12px 18px;"></div>
 
       <!-- Gene Header & Export / Order Bar -->
       <div class="card" style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;">
@@ -1641,20 +1651,20 @@ function renderSvgAndInspector() {
     const x2 = Math.max(x1 + 5, aaToX(w.aa_end));
     epiSvg += `<g>
       <title>${w.status} (aa ${w.aa_start}-${w.aa_end}): ${esc(w.reason)}</title>
-      <rect x="${x1.toFixed(1)}" y="${track3RectY}" width="${(x2 - x1).toFixed(1)}" height="16" rx="3" fill="${w.status === 'SAFE' ? '#0d9488' : '#f43f5e'}" fill-opacity="0.85"/>
+      <rect x="${x1.toFixed(1)}" y="${track3RectY}" width="${(x2 - x1).toFixed(1)}" height="16" rx="3" fill="${w.status === 'SAFE' ? '#38bdf8' : '#fb7185'}" fill-opacity="0.9"/>
     </g>`;
   });
 
   document.getElementById('svg-wrap').innerHTML = `
     <svg viewBox="0 0 ${W} ${svgH}" style="width:100%;min-width:640px;">
-      <text x="${padX}" y="22" font-size="12" font-weight="700" fill="#334155">Track 1: Coding Exons</text>
-      <line x1="${padX}" y1="47" x2="${W - padX}" y2="47" stroke="#cbd5e1" stroke-width="3"/>
+      <text x="${padX}" y="22" font-size="12" font-weight="700" fill="#1e3a8a">Track 1: Coding Exons</text>
+      <line x1="${padX}" y1="47" x2="${W - padX}" y2="47" stroke="#bfdbfe" stroke-width="3"/>
       ${exSvg}
-      <text x="${padX}" y="85" font-size="12" font-weight="700" fill="#334155">Track 2: Conserved Pfam / Structural Domains (deduplicated; click any domain to jump to its exon)</text>
-      <rect x="${padX}" y="95" width="${usable}" height="${domTrackHeight}" rx="4" fill="#f1f5f9"/>
+      <text x="${padX}" y="85" font-size="12" font-weight="700" fill="#1e3a8a">Track 2: Conserved Pfam / Structural Domains (deduplicated; click any domain to jump to its exon)</text>
+      <rect x="${padX}" y="95" width="${usable}" height="${domTrackHeight}" rx="4" fill="#eef6ff"/>
       ${domSvg}
-      <text x="${padX}" y="${track3LabelY}" font-size="12" font-weight="700" fill="#334155">Track 3: Western Antibody Epitope Map (Teal = Safe | Coral = Re-initiation / Skippable Risk)</text>
-      <rect x="${padX}" y="${track3RectY}" width="${usable}" height="16" rx="3" fill="#f1f5f9"/>
+      <text x="${padX}" y="${track3LabelY}" font-size="12" font-weight="700" fill="#1e3a8a">Track 3: Western Antibody Epitope Map (Sky Blue = Safe | Coral = Re-initiation / Skippable Risk)</text>
+      <rect x="${padX}" y="${track3RectY}" width="${usable}" height="16" rx="3" fill="#eef6ff"/>
       ${epiSvg}
       <text x="${padX}" y="${axisY}" font-size="12" fill="#64748b">N-term (aa 1)</text>
       <text x="${(W / 2).toFixed(1)}" y="${axisY}" text-anchor="middle" font-size="12" fill="#64748b">aa ${Math.floor(protLen / 2)}</text>
@@ -1748,7 +1758,7 @@ function renderGuidesTable() {
   }
 
   const tssBanner = (isCrispri && r.tss_genomic_pos)
-    ? `<div style="background:#f0fdfa;border:1px solid #99f6e4;color:#0f766e;border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:10px;">
+    ? `<div style="background:#eff6ff;border:1px solid #93c5fd;color:#1d4ed8;border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:10px;">
          <strong>d${esc(nucLbl)}-KRAB Promoter Window:</strong> Guides designed around primary RefSeq 5&prime; TSS at <code>${esc(r.chrom)}:${r.tss_genomic_pos}</code> (Horlbeck/Weissman window: <code>-50</code> to <code>+300 bp</code>; peak <code>+25..+150 bp</code>). No DSBs — avoids multi-copy amplification &amp; pan-essential clonal escaper artifacts.
        </div>`
     : '';
@@ -2163,8 +2173,8 @@ function renderBatchReportNav() {
     const sym = BATCH_ROWS[i].payload.report.gene_symbol;
     const active = i === SELECTED_BATCH_IDX;
     const style = active
-      ? 'background:#0f766e;color:#ffffff;border-color:#0f766e;'
-      : 'background:#ffffff;color:#0f766e;border-color:#5eead4;';
+      ? 'background:#2563eb;color:#ffffff;border-color:#2563eb;'
+      : 'background:#ffffff;color:#1d4ed8;border-color:#93c5fd;';
     return `<button type="button" class="chip" style="${style}" onclick="openBatchRow(${i}, false)">${esc(sym)}</button>`;
   }).join('');
 
@@ -2172,7 +2182,7 @@ function renderBatchReportNav() {
   nav.innerHTML = `
     <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;">
       <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
-        <span style="font-size:12.5px;font-weight:800;color:#0f766e;margin-right:4px;">Detailed Report (${posInReady + 1}/${readyIndices.length}):</span>
+        <span style="font-size:12.5px;font-weight:800;color:#1e3a8a;margin-right:4px;">Detailed Report (${posInReady + 1}/${readyIndices.length}):</span>
         ${chipsHtml}
       </div>
       <div style="display:flex;gap:6px;align-items:center;">
