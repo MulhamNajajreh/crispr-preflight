@@ -1,4 +1,4 @@
-# `crispr-preflight`
+# CRISPR Preflight
 
 **Pre-experiment biological flight check for CRISPR knockout, CRISPRi, and target validation across Human, Mouse, Rat, Zebrafish, *Drosophila*, and *C. elegans*.**
 

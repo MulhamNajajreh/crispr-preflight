@@ -30,7 +30,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>CRISPR-Preflight — Pre-Experiment Target &amp; Knockout Flight Check</title>
+<title>CRISPR Preflight — Pre-Experiment Target &amp; Knockout Flight Check</title>
 <style>
   :root {
     --bg: #f8fafc;
@@ -384,7 +384,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
   <div class="topbar">
     <div class="topbar-inner">
       <div>
-        <div class="brand">crispr-<span>preflight</span></div>
+        <div class="brand">CRISPR <span>Preflight</span></div>
         <div class="tagline">Pre-experiment biological flight check across Human, Mouse, Rat, Zebrafish, Drosophila &amp; C. elegans</div>
       </div>
       <div class="mode-tabs" role="tablist">
@@ -710,7 +710,7 @@ WEB_APP_HTML = r"""<!DOCTYPE html>
     </div>
 
     <footer style="margin-top:28px;padding-top:14px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);text-align:center;line-height:1.6;">
-      <div><strong>crispr-preflight</strong> &bull; Developed by <strong>Mulham Najajreh</strong> &bull; Open-source under the MIT License</div>
+      <div><strong>CRISPR Preflight</strong> &bull; Developed by <strong>Mulham Najajreh</strong> &bull; Open-source under the MIT License</div>
       <div>This work was supported in part by complimentary access to Google Antigravity and Gemini 4 Argon to accelerate scientific workflows.</div>
     </footer>
   </div>
